@@ -1,10 +1,10 @@
 // Janela de ajuste de parâmetros: pré-visualização ao vivo (reativa), validação, aplicar/cancelar.
 import { $, el, setText, fmt, toast } from './dom.js';
-import { store, closeEditor, previewParams, commitParams } from '../state.js';
-import { MODES, TYPE_LABEL } from '../shared/machines.js';
-import { STATUS_LABEL } from '../shared/rules.js';
-import { activeScenario } from '../scenarios/index.js';
-import { metricsOf, metricOver } from '../scenarios/metrics.js';
+import { store, closeEditor, previewParams, commitParams } from '../core/state.js';
+import { MODES } from '../domain/paramSchema.js';
+import { STATUS_LABEL } from '../domain/rules.js';
+import { activeScenario } from '../usecases/registry.js';
+import { metricsOf, metricOver } from '../domain/metrics.js';
 
 export function mountParamsModal() {
   const modal = $('#params-modal');
@@ -65,7 +65,7 @@ export function mountParamsModal() {
     const schema = activeScenario().paramSchema(m.type);
     current = { id: m.id, snapshot: { ...m.params }, draft: { ...m.params }, schema };
     setText($('#pm-title'), `⚙️ Parâmetros — ${m.id}`);
-    setText($('#pm-sub'), `${m.name} · ${m.typeLabel || TYPE_LABEL[m.type] || m.type}`);
+    setText($('#pm-sub'), `${m.name} · ${m.typeLabel || m.type}`);
     form.replaceChildren(...Object.keys(schema).map((k) => {
       const s = schema[k];
       const head = el('div', { class: 'row' }, el('label', { for: `pm-${k}` }, s.label), el('span', { class: 'val' }));
@@ -143,8 +143,8 @@ export function mountParamsModal() {
     if (!changed.length) { toast('Nenhuma alteração para aplicar.', 'info'); return; }
     try {
       await commitParams(id, { ...draft }, { prev: snapshot });
-      const where = store.state.scenario === 'farm' ? 'simulador da fazenda' : store.state.connection.mode === 'fabric' ? 'Fabric Eventstream' : 'simulador';
-      toast(`✅ ${changed.length} parâmetro(s) de ${id} publicados no ${where}`);
+      const where = store.state.connection.mode === 'fabric' ? 'controle HTTP local do simulador' : 'simulador local';
+      toast(`✅ ${changed.length} parâmetro(s) de ${id} sincronizados com o ${where}`);
     } catch (e) {
       toast(`⚠️ Parâmetros aplicados localmente, mas a sincronização falhou: ${e.message}`, 'err');
     }

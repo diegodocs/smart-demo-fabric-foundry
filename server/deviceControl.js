@@ -1,11 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import { createMachines } from '../app/src/shared/machines.js';
+import { createMachines as createFactoryAssets } from '../app/src/usecases/factory/catalog.js';
 
 export const COMMANDS = new Set(['EMERGENCY_STOP', 'PAUSE', 'RESUME', 'SPEED_UP', 'SLOW_DOWN', 'CALIBRATE', 'CYCLE_START']);
 
-export function createDeviceControl() {
+// createAssets é parametrizável por catálogo (fábrica por padrão) para que outros casos de uso
+// (ex.: Smart Energy) possam ter seu próprio device control sem duplicar esta lógica.
+export function createDeviceControl(createAssets = createFactoryAssets) {
   const session = randomUUID();
-  const devices = Object.fromEntries(createMachines().map((d) => [d.id, {
+  const devices = Object.fromEntries(createAssets().map((d) => [d.id, {
     ...d, revision: 0, calibrations: 0,
   }]));
 
@@ -32,9 +34,13 @@ export function createDeviceControl() {
           if (!d.params.speed) d.params.speed = d.defaults.speed;
           d.commLost = false;
           break;
-        case 'SPEED_UP': d.params.speed = Math.min(130, d.params.speed + 10); break;
+        case 'SPEED_UP': d.params.speed = Math.min(d.speedMax ?? 130, d.params.speed + 10); break;
         case 'SLOW_DOWN': d.params.speed = Math.max(0, d.params.speed - 10); break;
-        case 'CALIBRATE': d.vib *= 0.75; d.calibrations++; break;
+        case 'CALIBRATE':
+          d.vib *= 0.75;
+          if (Number.isFinite(d.outside)) d.outside = Math.max(0, d.outside - 1);
+          d.calibrations++;
+          break;
         default: throw new Error(`Comando desconhecido: ${command}`);
       }
       d.revision++;
@@ -54,7 +60,9 @@ export function applyControlSnapshot(devices, snapshot, applied) {
     const previousCalibrations = prev?.session === snapshot.session ? prev.calibrations : 0;
     d.params = { ...r.params };
     d.commLost = r.commLost;
-    d.vib *= 0.75 ** Math.max(0, r.calibrations - previousCalibrations);
+    const calibrations = Math.max(0, r.calibrations - previousCalibrations);
+    d.vib *= 0.75 ** calibrations;
+    if (Number.isFinite(d.outside)) d.outside = Math.max(0, d.outside - calibrations);
     applied.set(d.id, { session: snapshot.session, revision: r.revision, calibrations: r.calibrations });
   }
 }

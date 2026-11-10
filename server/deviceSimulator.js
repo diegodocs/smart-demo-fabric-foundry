@@ -2,23 +2,28 @@
 // Controle: SPA → proxy HTTP → simulador. Estado: simulador → Eventstream → Eventhouse.
 //
 //   npm run simulate:devices
-import { createMachines } from '../app/src/shared/machines.js';
-import { step, telemetrySnapshot } from '../app/src/shared/simulation.js';
+//   SCENARIO=energy npm run simulate:devices   (usa o catálogo e destino desse cenário)
+import { DEVICE_CATALOGS, resolveScenario } from './catalogs.js';
+import { step, telemetrySnapshot } from '../app/src/domain/simulation.js';
 import { fabricConfig, canPublish, publish, closeFabric } from './fabric.js';
 import { applyControlSnapshot } from './deviceControl.js';
+import { measuredTelemetry } from '../app/src/domain/telemetry.js';
 
-const c = fabricConfig();
+const SCENARIO = resolveScenario(process.env.SCENARIO);
+const c = fabricConfig(SCENARIO);
 if (!canPublish(c)) {
-  console.error('Defina FABRIC_EVENTSTREAM_CONNECTION_STRING no .env para enviar telemetria ao Eventstream.');
+  const prefix = c.scenarioSpecific ? `FABRIC_${SCENARIO.toUpperCase()}` : 'FABRIC';
+  console.error(`Configure ${prefix}_EVENTSTREAM_CONNECTION_STRING e, se necessário, ${prefix}_EVENTSTREAM_NAME para o cenário ${SCENARIO}.`);
   process.exit(1);
 }
 
 const INTERVAL_MS = Number(process.env.DEVICE_INTERVAL_MS || 2000);
-const devices = createMachines();
+const devices = DEVICE_CATALOGS[SCENARIO].createAssets();
+const simulation = DEVICE_CATALOGS[SCENARIO].createSimulation?.(devices);
 const lastApplied = new Map();
 let loggedPayload = false;
 let initialSample = true;
-const controlUrl = `${(process.env.DEVICE_CONTROL_URL || `http://localhost:${process.env.API_PORT || 8787}`).replace(/\/$/, '')}/api/devices/control`;
+const controlUrl = `${(process.env.DEVICE_CONTROL_URL || `http://localhost:${process.env.API_PORT || 8787}`).replace(/\/$/, '')}/api/devices/control?scenario=${SCENARIO}`;
 
 async function syncParams() {
   try {
@@ -30,10 +35,13 @@ async function syncParams() {
 
 async function tick() {
   await syncParams();
-  const events = devices.map((d) => initialSample ? telemetrySnapshot(d) : step(d, INTERVAL_MS / 1000)).filter(Boolean).map((t) => {
+  const readings = simulation
+    ? initialSample ? simulation.snapshot() : simulation.step(INTERVAL_MS / 1000)
+    : devices.map((d) => initialSample ? telemetrySnapshot(d) : step(d, INTERVAL_MS / 1000)).filter(Boolean);
+  const events = readings.map((t) => {
     const d = devices.find((x) => x.id === t.machineId);
-    Object.assign(d, { temp: t.temp, vib: t.vib, usage: t.usage, isRunning: t.isRunning });
-    return { eventType: 'telemetry', ...t };
+    Object.assign(d, measuredTelemetry(t));
+    return { eventType: 'telemetry', scenario: SCENARIO, ...t };
   });
   initialSample = false;
   try {
@@ -42,11 +50,11 @@ async function tick() {
       console.log('[telemetry] Exemplo de payload aceito pelo endpoint:', JSON.stringify(events[0]));
       loggedPayload = true;
     }
-    process.stdout.write(`\r📡 ${new Date().toLocaleTimeString('pt-BR')} · ${events.length} leituras enviadas   `);
+    process.stdout.write(`\r📡 ${new Date().toLocaleTimeString('pt-BR')} · ${SCENARIO} · ${events.length} leituras enviadas   `);
   } catch (e) { console.error('\n[telemetry]', e.message); }
 }
 
-console.log(`Simulando ${devices.length} dispositivos a cada ${INTERVAL_MS} ms → Eventstream; controle HTTP: ${controlUrl}`);
+console.log(`Simulando ${devices.length} dispositivos (${SCENARIO}) a cada ${INTERVAL_MS} ms → Eventstream; controle HTTP: ${controlUrl}`);
 let stopping = false;
 let timer;
 async function run() {

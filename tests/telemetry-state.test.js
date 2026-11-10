@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { afterEach, beforeEach, test } from 'node:test';
-import { createMachines } from '../app/src/shared/machines.js';
-import { store, attachTelemetrySource, applyTelemetry, sendCommand, commitParams } from '../app/src/state.js';
+import { createMachines } from '../app/src/usecases/factory/catalog.js';
+import { store, attachTelemetrySource, applyTelemetry, setConnection, sendCommand, commitParams } from '../app/src/core/state.js';
 import { createDeviceControl, applyControlSnapshot } from '../server/deviceControl.js';
-import { step, telemetrySnapshot, runningState } from '../app/src/shared/simulation.js';
+import { step, telemetrySnapshot, runningState } from '../app/src/domain/simulation.js';
 import { machineSnapshot } from '../app/src/integration/agent/context.js';
 import { createMockSource } from '../app/src/integration/telemetry/mock.js';
 
@@ -103,6 +103,35 @@ test('UI and agent keep binary operation state when a reading is missing or comm
   assert.equal(m.isRunning, false);
   applyTelemetry([{ machineId: m.id, isRunning: 'false', commLost: false }]);
   assert.equal(m.isRunning, false);
+});
+
+test('Fabric errors mark readings unavailable until individual telemetry returns', () => {
+  const previous = { ...store.state.connection };
+  const initialUnplanned = store.state.kpis.unplanned;
+  try {
+    setConnection({ mode: 'fabric', status: 'connected' });
+    const [first, second] = store.state.machines;
+    applyTelemetry([{
+      machineId: first.id, ts: '2025-01-01T12:00:00Z', commLost: false, isRunning: true,
+    }]);
+    const lastSync = store.state.connection.lastSync;
+    setConnection({ status: 'error', detail: 'Proxy indisponível' });
+    assert.ok(store.state.machines.every((m) => m.commLost && m.status === 'offline'));
+    assert.equal(store.state.connection.lastSync, lastSync);
+    assert.equal(store.state.kpis.unplanned, initialUnplanned);
+    setConnection({ status: 'connected' });
+    assert.ok(store.state.machines.every((m) => m.commLost));
+    applyTelemetry([{
+      machineId: first.id, ts: '2025-01-01T12:00:01Z', commLost: false, isRunning: true,
+    }]);
+    assert.equal(first.commLost, false);
+    assert.notEqual(first.status, 'offline');
+    assert.equal(second.commLost, true);
+    setConnection({ mode: 'mock', status: 'error' });
+    assert.equal(first.commLost, false);
+  } finally {
+    Object.assign(store.state.connection, previous);
+  }
 });
 
 test('initial UI, proxy devices and first telemetry agree for every machine', () => {

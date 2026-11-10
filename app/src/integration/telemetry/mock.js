@@ -1,41 +1,41 @@
 // Simulador local dos dispositivos IoT (modo padrão).
 // Mantém um "gêmeo" de cada máquina, separado do estado da UI: os setpoints
 // so chegam ao dispositivo pelo canal de controle, separado da telemetria.
-import { step, telemetrySnapshot } from '../../shared/simulation.js';
+import { step, telemetrySnapshot } from '../../domain/simulation.js';
+import { measuredTelemetry } from '../../domain/telemetry.js';
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 const clone = (o) => JSON.parse(JSON.stringify(o));
 
-export function createMockSource(machines, { intervalMs = 1000 } = {}) {
-  const extras = ['fuel', 'humidity', 'nh3', 'activity', 'outside', 'speedKmh', 'headcount'];
-  const devices = Object.fromEntries(machines.map((m) => [m.id, clone({
-    id: m.id, params: m.params, defaults: m.defaults, base: m.base,
-    temp: m.temp, vib: m.vib, usage: m.usage, commLost: m.commLost,
-    ...Object.fromEntries(extras.filter((k) => m[k] != null).map((k) => [k, m[k]])),
-  })]));
+export function createMockSource(machines, { intervalMs = 1000, createSimulation } = {}) {
+  const devices = Object.fromEntries(machines.map((m) => [m.id, clone(m)]));
+  const simulation = createSimulation?.(Object.values(devices));
   let timer = null;
   let boot = null;
   let handlers = {};
   let initialSample = true;
   const reconnecting = new Set();
+  const deliveries = new Set();
 
   function tick() {
     const t0 = performance.now();
     const items = [];
+    const readings = simulation && new Map((initialSample ? simulation.snapshot() : simulation.step(intervalMs / 1000))
+      .map((t) => [t.machineId, t]));
     for (const d of Object.values(devices)) {
-      const t = initialSample ? telemetrySnapshot(d) : step(d, intervalMs / 1000);
+      const t = simulation ? readings.get(d.id) : initialSample ? telemetrySnapshot(d) : step(d, intervalMs / 1000);
       if (!t) continue;
-      const live = { temp: t.temp, vib: t.vib, usage: t.usage };
-      for (const k of ['fuel', 'humidity', 'nh3', 'activity', 'outside', 'speedKmh', 'headcount']) {
-        if (t[k] !== undefined) live[k] = t[k];
-      }
-      Object.assign(d, live);
+      Object.assign(d, measuredTelemetry(t));
       items.push({ ...t, commLost: false });
     }
     initialSample = false;
     // latência simulada do caminho dispositivo → Eventstream → Eventhouse → UI
     const latencyMs = Math.round(60 + Math.random() * 110);
-    setTimeout(() => handlers.onTelemetry?.(items, { latencyMs, dtSec: intervalMs / 1000, t0 }), latencyMs);
+    const delivery = setTimeout(() => {
+      deliveries.delete(delivery);
+      handlers.onTelemetry?.(items, { latencyMs, dtSec: intervalMs / 1000, t0 });
+    }, latencyMs);
+    deliveries.add(delivery);
   }
 
   return {
@@ -54,7 +54,11 @@ export function createMockSource(machines, { intervalMs = 1000 } = {}) {
         timer = setInterval(tick, intervalMs);
       }, 400);
     },
-    stop() { clearTimeout(boot); clearInterval(timer); timer = null; boot = null; },
+    stop() {
+      clearTimeout(boot); clearInterval(timer); timer = null; boot = null;
+      deliveries.forEach(clearTimeout);
+      deliveries.clear();
+    },
     async publishParams(machineId, params) {
       await delay(120 + Math.random() * 180);
       const d = devices[machineId];

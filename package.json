@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "server": "node --env-file-if-exists=.env server/index.js",
     "dev:all": "concurrently --kill-others -n web,api -c blue,green \"npm:dev\" \"npm:server\"",
-    "simulate:devices": "node --env-file-if-exists=.env server/deviceSimulator.js"
+    "simulate:devices": "node --env-file-if-exists=.env server/deviceSimulator.js",
+    "test": "node --experimental-test-module-mocks --test tests/agent.test.js tests/device-control.test.js tests/fabric.test.js tests/telemetry-state.test.js tests/farm.test.js tests/farm-layout.test.js tests/side-panels.test.js tests/energy.test.js tests/energy-layout.test.js tests/energy-simulation.test.js tests/energy-fabric.test.js tests/visual-assets.test.js tests/scene-startup.test.js tests/mining.test.js tests/scenario-integrations.test.js tests/pharma.test.js tests/scenario-routing.test.js tests/scenario-default.test.js"
   },
   "dependencies": {
     "@azure/event-hubs": "^6.0.0",

@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import * as THREE from 'three';
-import { VEHICLE_ROUTES, routePose, hasVehicleClearance } from '../app/src/scene/farmLayout.js';
-import { createFarmWheels, rollFarmWheels } from '../app/src/scene/farmWheels.js';
-import { createFarmAssets } from '../app/src/scenarios/farm.js';
+import { VEHICLE_ROUTES, routePose, hasVehicleClearance } from '../app/src/usecases/farm/layout.js';
+import { createFarmWheels, rollFarmWheels } from '../app/src/usecases/farm/wheels.js';
+import { createFarmAssets } from '../app/src/usecases/farm/catalog.js';
 
 const radii = {
   tractor: 1.15, sprayer: 1.5, truck: 1.65, harvester: 1.7,

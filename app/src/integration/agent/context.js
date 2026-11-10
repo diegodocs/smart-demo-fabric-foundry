@@ -1,18 +1,18 @@
 // Contexto enviado ao agente: snapshot da máquina selecionada + resumo da planta.
-import { TYPE_LABEL, MODES } from '../../shared/machines.js';
-import { STATUS_LABEL } from '../../shared/rules.js';
+import { MODES } from '../../domain/paramSchema.js';
+import { STATUS_LABEL } from '../../domain/rules.js';
+import { extraTelemetry } from '../../domain/telemetry.js';
 
 export function machineSnapshot(m) {
   return {
-    id: m.id, name: m.name, type: m.type,     typeLabel: m.typeLabel || TYPE_LABEL[m.type] || m.type,
+    id: m.id, name: m.name, type: m.type,     typeLabel: m.typeLabel || m.type,
     status: m.status, statusLabel: STATUS_LABEL[m.status],
     metrics: m.metrics || null,
     location: m.location || null,
     telemetry: {
       temp: Math.round(m.temp * 10) / 10, vib: m.vib, usage: Math.round(m.usage),
       isRunning: m.isRunning,
-      fuel: m.fuel, humidity: m.humidity, nh3: m.nh3, activity: m.activity,
-      outside: m.outside, speedKmh: m.speedKmh,
+      ...extraTelemetry(m),
     },
     params: { ...m.params, modeLabel: MODES[m.params.mode] },
     defaults: { ...m.defaults },
@@ -31,6 +31,10 @@ export function buildContext(state) {
     alerts: state.machines.filter((m) => m.status !== 'online')
       .map((m) => ({ id: m.id, name: m.name, status: m.status, reasons: m.reasons.map((r) => r.text) })),
     selected: sel ? machineSnapshot(sel) : null,
-    machines: state.machines.map((m) => ({ id: m.id, name: m.name, type: m.type, status: m.status })),
+    machines: state.machines.map((m) => ({
+      id: m.id, name: m.name, type: m.type, status: m.status,
+      commLost: m.commLost,
+      telemetry: m.commLost ? null : machineSnapshot(m).telemetry,
+    })),
   };
 }

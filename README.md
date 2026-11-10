@@ -1,8 +1,8 @@
-# AI Fabric — Dashboard IoT de chão de fábrica
+# Dashboard IoT multi-cenário — Smart Factory · Smart Farm · Smart Energy · Smart Mining · Smart Pharma
 
-SPA de monitoramento de 16 máquinas industriais com cena 3D interativa, telemetria reativa e integrações opcionais com Microsoft Fabric Real-Time Intelligence (RTI) e Microsoft Foundry. A interface é feita em JavaScript modular, sem framework, com Vite e Three.js.
+SPA de monitoramento IoT com cena 3D interativa, telemetria reativa e integrações opcionais com Microsoft Fabric Real-Time Intelligence (RTI) e Microsoft Foundry. A interface é feita em JavaScript modular, sem framework, com Vite e Three.js. Cinco cenários compartilham o mesmo motor reativo, regras de status, telemetria, comandos e assistente: **Smart Factory** (16 máquinas industriais), **Smart Farm** (máquinas de campo, rebanho e instalações agropecuárias), **Smart Energy** (geração, cidade e recarga de veículos), **Smart Mining** (extração, beneficiamento e entrega de minério) e **Smart Pharma** (cadeia farmacêutica da matéria-prima ao consumidor).
 
-> **Demonstração:** os dados iniciais, a identificação do operador e as informações de sessão são fictícios. A interface não implementa autenticação. Use a integração Fabric para conectar telemetria real.
+> **Demonstração:** os dados iniciais, a identificação do operador e as informações de sessão são fictícios. A interface não implementa autenticação. Todos os cenários permitem telemetria Microsoft Fabric e assistente Microsoft Foundry, ou implementações mock locais. O controle HTTP continua exclusivo do simulador.
 
 ## Requisitos
 
@@ -39,9 +39,13 @@ O script abre um console com os logs ao vivo e grava uma cópia em `.dev-process
 
 ## O que a SPA oferece
 
-- **Cenário:** o seletor **Simulação** no cabeçalho alterna entre o chão de fábrica (padrão) e a **AI Farm**. A escolha fica em `localStorage` (`iot-scenario`). A fazenda é somente mock — não consulta Fabric nem Foundry — e demonstra as mesmas funções: cena 3D, telemetria, alertas, parâmetros, comandos e assistente, agora com máquinas de campo, rebanho e galpões.
-- **Cena 3D:** galpão industrial ou fazenda, ativos animados, câmera orbital, seleção e modo vitrine.
-- **Organização da AI Farm:** talhões separados para tratores, pulverização, colheita e irrigação; garagem de manutenção, pátio logístico de mão única, armazenagem, pastagens e suinocultura. Veículos seguem circuitos independentes com curvas suaves e verificação de distância de segurança; as rodas acompanham o deslocamento e param junto com o veículo.
+- **Cenário:** o seletor **Simulação** alterna entre **Smart Factory** (padrão), **Smart Farm**, **Smart Energy**, **Smart Mining** e **Smart Pharma**. A escolha fica em `localStorage` (`iot-scenario`); os IDs são `factory`, `farm`, `energy`, `mining` e `pharma`. Sem escolha válida salva, `VITE_DEFAULT_SCENARIO` define o cenário inicial. Os cinco cenários respeitam `VITE_TELEMETRY_MODE` e `VITE_AGENT_MODE`, com telemetria e assistente configuráveis independentemente.
+- **Cena 3D:** galpão industrial, fazenda, estação de energia ou mina com extração, beneficiamento e entrega; ativos animados, câmera orbital, seleção e modo vitrine.
+- **Qualidade visual:** os cinco cenários usam iluminação física, sombras suaves e texturas locais com mapas normais. Os rótulos da cena aparecem somente enquanto o mouse está sobre o ativo correspondente, inclusive para ativos selecionados, em alerta ou offline; os indicadores visuais de status permanecem disponíveis.
+- **Organização da Smart Farm:** talhões separados para tratores, pulverização, colheita e irrigação; garagem de manutenção, pátio logístico de mão única, armazenagem, pastagens e suinocultura. Veículos seguem circuitos independentes com curvas suaves e verificação de distância de segurança; as rodas acompanham o deslocamento e param junto com o veículo.
+- **Organização da Smart Energy:** represa, barragem, condutos e três turbinas em corte didático; campo verde rural com dez painéis; cidade com dez casas, ruas, quatro carros e dois caminhões circulando; cinco postos de recarga e três circuitos aéreos com postes/fios.
+- **Organização da Smart Mining:** cava, quatro caminhões de mina em faixas independentes, três britagens, correia, usina, seis silos, caminhão de entrega, terminal e três centros de distribuição, com estoques, cargas e entregas acompanhados ao vivo.
+- **Organização da Smart Pharma:** fábrica com cinco setores, **Smart City** em área separada com casas e três farmácias, dois centros de distribuição e cinco caminhões refrigerados com lotes e cadeia fria simulados.
 - **Monitoramento reativo:** lista de máquinas, estados online/alerta/offline, métricas, alertas, KPIs, eventos e sincronização.
 - **Painel do ativo:** temperatura, vibração, utilização, limites e setpoints.
 - **Ajuste de parâmetros:** pré-visualização imediata na interface, validação por tipo de máquina, restauração dos valores padrão e aplicação ou cancelamento.
@@ -52,9 +56,54 @@ O script abre um console com os logs ao vivo e grava uma cópia em `.dev-process
 
 Os valores de temperatura, vibração, utilização, KPIs e estado inicial são demonstrações; não representam uma instalação ou processo industrial real.
 
-Os [manuais fictícios de operação](Manuais/README.md) descrevem os parâmetros de configuração dos 16 equipamentos, com valores sugeridos para demonstração, um alerta comum de temperatura e a ação correspondente. Não devem ser usados para operar máquinas reais.
+Os [manuais fictícios de operação](Manuais/README.md) descrevem os parâmetros de configuração dos 16 equipamentos do chão de fábrica, com valores sugeridos para demonstração, um alerta comum de temperatura e a ação correspondente. Não devem ser usados para operar máquinas reais.
+
+As especificações funcional e não funcional do sistema, obtidas por engenharia reversa do comportamento atual, estão em [docs/specs/functional-spec.md](docs/specs/functional-spec.md) e [docs/specs/non-functional-spec.md](docs/specs/non-functional-spec.md).
 
 UI e simuladores compartilham o estado operacional inicial: 15 máquinas começam em funcionamento (`isRunning=true`), e `ROB-003` começa parado (`isRunning=false`, modo `off`, velocidade zero). Todas as 16 enviam telemetria, sempre com estado booleano, sem `null`. O primeiro lote preserva os valores iniciais antes da evolução física; alertas de temperatura/vibração não significam equipamento parado. Para uma demonstração limpa, reinicie proxy e simulador e recarregue a SPA. Controles já existentes no proxy são respeitados.
+
+## Smart Pharma: da matéria-prima ao consumidor
+
+Selecione **Smart Pharma** em **Simulação**. A fábrica agrupa cinco edifícios: recebimento de matéria-prima (`PHA-REC-001`), formulação/produção (`PHA-PRD-001`), controle de qualidade (`PHA-QUA-001`), embalagem/serialização (`PHA-EMB-001`) e armazém refrigerado (`PHA-ARM-001`). A **Smart City** ocupa uma área separada com casas, ruas e três farmácias (`PHA-FAR-001` a `PHA-FAR-003`). Dois centros de distribuição (`PHA-DIS-001` e `PHA-DIS-002`) ficam nos lados opostos e cinco caminhões refrigerados (`PHA-TRK-001` a `PHA-TRK-005`) ligam as áreas, totalizando **15 ativos**. Os oito IDs anteriores foram preservados.
+
+As casas ficam em lotes separados das farmácias e docas. Os labels da cena aparecem somente enquanto o ponteiro está sobre um ativo, inclusive quando ele está selecionado. No simulador, `PHA-TRK-001` e `PHA-TRK-002` começam conectados e circulam vazios entre as origens enquanto aguardam lotes; os outros três começam sem comunicação e parados. **Iniciar etapa** ou **Retomar etapa** reconecta esses caminhões e inicia o deslocamento após a chegada da telemetria, sem criar cargas fictícias. Pausa, parada e perda de comunicação interrompem o movimento.
+
+A cada 12 segundos de atividade do recebimento entra um lote de **100 unidades equivalentes**. O identificador `LOT-00001`, por exemplo, acompanha o lote até a entrega; o painel mostra o primeiro lote em atendimento em cada ativo, não um histórico regulatório. Cada instalação tem capacidade para 300 unidades e cada caminhão para 100. Os caminhões fazem os dois trechos, **armazém → centro → farmácia**, com escolha em rodízio entre destinos disponíveis e reserva de capacidade no destino. A carga espera quando não há capacidade ou o ativo necessário está indisponível. Os caminhões deslocam-se continuamente até a origem e o destino; carga e descarga são visíveis nas docas.
+
+O controle de qualidade bloqueia **cada quinto lote** com um resultado fictício. No armazém, nos cinco caminhões, nos dois centros e nas três farmácias, temperaturas fora de **2 a 8 °C** bloqueiam os lotes presentes; lotes novos não entram enquanto a temperatura estiver fora da faixa. Bloqueios são permanentes nesta execução: comandos, calibração e mudanças dos limites de alerta não liberam unidades. Desligar a refrigeração faz a temperatura convergir para 22 °C. Pausar mantém o alvo térmico, mas interrompe o fluxo; caminhões pausados preservam posição e carga, salvo bloqueio por excursão térmica.
+
+Os KPIs mostram recebimento, unidades em processo, lotes aprovados na simulação, bloqueios e entregas agregadas das três farmácias. A conservação é verificável: **recebidas = em processo, incluindo cargas + bloqueadas + entregues**. A simulação começa vazia; a primeira entrega ocorre após percorrer os setores e um centro de distribuição. Trocar de cenário reinicia o mock; no modo Fabric, o simulador Node continua independente da navegação.
+
+O cenário usa o mesmo controle HTTP, telemetria e assistente dos demais. Para publicar telemetria pelo simulador Node: `$env:SCENARIO='pharma'; npm run simulate:devices`. Após atualizar o código, reinicie o proxy e o simulador Pharma para reconhecer e publicar os 15 ativos; evite executar simultaneamente simuladores antigos e novos para os mesmos IDs. Leituras antigas não representam a nova rede e os ativos sem leituras atuais aparecem indisponíveis. Consulte o [setup Fabric/Foundry](docs/setup-fabric-foundry.md) para os campos adicionais.
+
+**Somente demonstração:** ritmos, testes de qualidade, unidades e faixa térmica são fictícios. Não representa formulação farmacêutica, validação sanitária, BPF/GMP, serialização regulatória, autenticação ou liberação real de medicamentos. Não use para decisões sobre medicamentos reais.
+
+## Smart Mining: da extração à entrega
+
+Os **21 ativos** simulam a cadeia cava → quatro caminhões de mina → três britagens → correia → beneficiamento → seis silos → caminhão de entrega → três centros de distribuição, com um terminal de expedição que autoriza e agrega as entregas. A ampliação preserva os oito IDs originais e acrescenta três caminhões, dois britadores, cinco silos e três centros.
+
+O beneficiamento converte 90% da massa recebida em produto e registra 10% como rejeitos. Os três britadores compartilham a capacidade disponível da correia, e a usina distribui produto entre silos disponíveis. A expedição alterna silos e centros de distribuição em rodízio, retornando ao próximo silo por vias contínuas, sem saltos de posição. Pausar uma ramificação não para as demais. Estoques e cargas têm capacidades finitas; entregas só aumentam na descarga. O contador do terminal soma os recebimentos dos centros e **não representa um segundo estoque** no balanço de massa.
+
+A demonstração começa com **31 t já extraídas** distribuídas entre cava (12 t), britador (6 t), correia (3 t), alimentação da usina (2 t) e silo (8 t), para que o fluxo e a primeira entrega sejam visíveis rapidamente. Minério em estoque, cargas nos veículos, produto entregue e rejeitos somam a massa extraída. Em mock, a simulação e seus contadores são reiniciados ao trocar de cenário; em Fabric, o estado recebido do Eventhouse prevalece e o simulador Node continua independente da navegação.
+
+Pausar, desligar ou desconectar uma etapa impede sua atividade; as demais podem continuar usando estoques já disponíveis. Os caminhões mantêm posição e carga quando pausados e retomam a rota posteriormente. Com carga parcial e sem novo material por cinco segundos, o caminhão parte para não reter o estoque restante. Ritmos, capacidades, temperaturas e conversão são ilustrativos; não representam uma mina real nem controlam equipamentos.
+
+Para manter pontos de investigação visíveis, o simulador inclui desvios demonstrativos persistentes: vibração no `MIN-BRI-002`, temperatura no `MIN-SIL-005` e no `MIN-DIS-002`. Os alertas vêm das leituras comparadas aos limites, não de um status fixo; a vibração inicial do britador 1 pode normalizar. No modo Fabric, os alertas dependem da telemetria recebida; não são injetados pelo navegador.
+
+## Smart Energy: cidade e geração integradas
+
+São **40 ativos monitorados**: 10 painéis + 2 inversores, 3 turbinas + 1 comporta, 5 carregadores, 10 casas, 4 carros + 2 caminhões e 3 circuitos. Os 14 IDs originais foram preservados; `SOL-ARR-*` agora representa painéis individuais da demonstração.
+
+- A água da represa percorre os condutos, movimenta as turbinas e sai pelo canal. A comporta do vertedouro regula a descarga excedente, separada da vazão das turbinas.
+- Solar e hidrelétrica alimentam a mesma rede. Há perdas ilustrativas de 2%; em déficit, casas e recarga recebem a mesma proporção da demanda. Circuitos e casas sem energia continuam com monitoramento comunicando.
+- Isolar `RED-SOL-001` ou `RED-HID-001` remove a fonte correspondente; isolar `RED-CID-001` interrompe o fornecimento urbano.
+- Veículos procuram postos compatíveis com bateria **≤20%**, reservam uma vaga e retornam às ruas com **80%**. Sem fornecimento não há recarga; veículos parados ou sem bateria não circulam. As capacidades e consumos são demonstrativos.
+- KPIs mostram potência em kW, demanda e déficit. Casas acumulam energia em kWh. A cena interpola posições recebidas, sem manter outra simulação física.
+- O mesmo motor integrado roda no mock do navegador, no loopback e no simulador que publica no Fabric. Em Fabric real, dados ausentes não são simulados nem exibidos como zero.
+
+Modelos GLB e texturas PBR são servidos localmente, sem CDN. A Smart Factory reutiliza a textura de concreto; a Smart Farm inclui solo e modelos ilustrativos de bovinos e ovinos; a Smart Mining reutiliza as texturas locais de solo, grama e concreto. As origens, licenças e adaptações estão nos arquivos de atribuição da [Smart Energy](app/public/assets/energy/ATTRIBUTIONS.md) e da [Smart Farm](app/public/assets/farm/ATTRIBUTIONS.md). Se um recurso visual falhar, a telemetria continua ativa e a cena oferece uma nova tentativa sem reiniciar a simulação. O pacote visual da Smart Energy tem aproximadamente 27 MB; o primeiro carregamento pode ser maior que nos outros cenários.
+
+**Limite:** não há armazenamento estacionário, rede externa, cálculo de fluxo de potência AC, proteção elétrica ou modelagem hidráulica de engenharia. Esta demonstração não deve operar equipamentos reais.
 
 ## Modos de execução
 
@@ -66,7 +115,7 @@ UI e simuladores compartilham o estado operacional inicial: 15 máquinas começa
 | `VITE_AGENT_MODE=foundry` | Usa o agente Microsoft Foundry através do proxy; o estado da planta é anexado à pergunta. |
 | `FABRIC_LOOPBACK=true` | Emula a API de telemetria, parâmetros e comandos em memória para testar o adaptador `fabric` sem Fabric. |
 
-`npm run dev` inicia apenas o Vite. Para os modos `fabric` e `foundry`, inicie também o proxy com `npm run dev:all` ou `npm run server`.
+`npm run dev` inicia apenas o Vite. Para os modos `fabric` e `foundry`, inicie também o proxy com `npm run dev:all` ou `npm run server`. Os modos se aplicam aos cinco cenários, inclusive ao alternar entre eles. Por exemplo, é possível usar Fabric com assistente mock, ou telemetria mock com Foundry.
 
 ## Configuração
 
@@ -77,25 +126,68 @@ Copie `.env.example` para `.env` e preencha somente as configurações dos servi
 | Variável | Finalidade |
 |---|---|
 | `VITE_TELEMETRY_MODE` | `mock` ou `fabric`. |
+| `VITE_DEFAULT_SCENARIO` | Cenário inicial sem seleção válida salva: `factory` (padrão), `farm`, `energy`, `mining` ou `pharma`. |
 | `VITE_AGENT_MODE` | `mock` ou `foundry`. |
 | `VITE_AGENT_DEBUG` | Força `true`/`false` para logs do agente no console do navegador; por padrão, os logs ficam ativos em desenvolvimento. |
 | `VITE_API_BASE` | Prefixo opcional da API; normalmente vazio, pois o Vite encaminha `/api` ao proxy. |
 | `API_PORT` | Porta do proxy Express; padrão `8787`. |
+| `API_HOST` | Endereço de escuta do proxy; use `127.0.0.1` para restringir o acesso local. Se vazio ou ausente, o Node escuta em todas as interfaces. |
 | `FABRIC_EVENTSTREAM_CONNECTION_STRING` | Connection string do endpoint Event Hubs do Eventstream; usada somente para publicar telemetria. |
 | `FABRIC_EVENTSTREAM_NAME` | Nome do Event Hub, se não estiver incluído na connection string. |
 | `FABRIC_KUSTO_URI`, `FABRIC_KUSTO_DATABASE` | URI de consulta e banco KQL do Eventhouse. |
 | `FABRIC_KUSTO_SCOPE` | Escopo Entra ID do Eventhouse; padrão `https://kusto.kusto.windows.net/.default`. |
+| `FABRIC_KUSTO_TENANT_ID` | Tenant opcional para autenticar as consultas ao Eventhouse; vazio usa o tenant padrão da credencial. Não altera a autenticação do Foundry. |
 | `FABRIC_TELEMETRY_TABLE` | Tabela KQL de telemetria; padrão `MachineTelemetry`. |
+| `FABRIC_{FACTORY\|FARM\|ENERGY\|MINING\|PHARMA}_*` | Overrides opcionais de Eventstream e Eventhouse por cenário; campos e regras abaixo. |
 | `FABRIC_POLL_MS`, `FABRIC_STALE_SEC` | Intervalo de consulta e limite de telemetria considerada desatualizada. |
 | `FABRIC_LOOPBACK` | `true` ativa a emulação em memória do proxy, quando o Eventhouse não está configurado. |
 | `DEVICE_INTERVAL_MS` | Intervalo do simulador de dispositivos; padrão `2000` ms. |
 | `DEVICE_CONTROL_URL` | URL base do proxy consultado pelo simulador; padrão `http://localhost:<API_PORT>`. |
+| `SCENARIO` | Cenário simulado por `npm run simulate:devices`: `factory` (padrão), `farm`, `energy`, `mining` ou `pharma`. |
 | `FOUNDRY_PROJECT_ENDPOINT`, `FOUNDRY_AGENT_NAME` | Endpoint do projeto Foundry e nome do agente. |
-| `FOUNDRY_AGENT_ID` | Compatibilidade com o Agent Service clássico; IDs `asst_...` usam o endpoint legado quando `FOUNDRY_AGENT_NAME` não está definido. |
-| `FOUNDRY_API_VERSION`, `FOUNDRY_SCOPE`, `FOUNDRY_TIMEOUT_MS` | Versão da API, escopo Entra ID e timeout do agente. |
+| `FOUNDRY_{FACTORY\|FARM\|ENERGY\|MINING\|PHARMA}_AGENT_NAME` | Nome opcional do agente por cenário; sem ele, usa o agente compartilhado. |
+| `FOUNDRY_AGENT_ID` | Compatibilidade com o Agent Service clássico; IDs `asst_...` usam o endpoint legado quando não há nome específico ou compartilhado. |
+| `FOUNDRY_API_VERSION`, `FOUNDRY_SCOPE`, `FOUNDRY_TIMEOUT_MS` | Versão da API (`2025-11-15-preview` por padrão para hosted agents), escopo Entra ID e timeout. |
 | `FOUNDRY_DEBUG` | `true` registra mensagens, payload e respostas do agente no console do proxy. Pode expor conteúdo de conversas nos logs. |
 
-O proxy autentica no Fabric e no Foundry com `DefaultAzureCredential` (por exemplo, `az login` durante desenvolvimento ou managed identity em hospedagem). Não coloque credenciais em variáveis `VITE_*`, pois elas podem ser incluídas no bundle do navegador.
+O proxy autentica no Fabric e no Foundry com `DefaultAzureCredential` (por exemplo, `az login` durante desenvolvimento ou managed identity em hospedagem). Não coloque credenciais em variáveis `VITE_*`, pois elas podem ser incluídas no bundle do navegador. O proxy não possui autenticação própria; mantenha `API_HOST=127.0.0.1` em execuções locais e não o exponha à rede sem proteção adicional.
+
+Para iniciar a UI em Mining sem uma escolha anterior salva, configure `VITE_DEFAULT_SCENARIO=mining` e reinicie o Vite ou gere novamente o build. Uma seleção válida em `localStorage` tem precedência e continua sendo preservada ao trocar de cenário; selecione Mining na UI ou remova a chave `iot-scenario` no armazenamento do navegador para usar o novo padrão. Valor ausente ou inválido usa `factory`; valores inválidos geram um aviso no console. Essa variável é independente de `SCENARIO`, que seleciona somente o simulador Node.
+
+O proxy atende os cinco cenários com destinos compartilhados ou específicos: as rotas `/api/telemetry/stream`, `/api/params`, `/api/devices/control`, `/api/commands` e `/api/health` aceitam `scenario` (query string ou corpo da requisição, conforme o caso), com `factory` como padrão quando omitido. Um cenário explícito inválido é rejeitado. A SPA envia o cenário ativo automaticamente. Os catálogos em [server/catalogs.js](server/catalogs.js) isolam controles e telemetria pelo conjunto de IDs conhecidos.
+
+### Destinos e agentes por cenário
+
+Para cada prefixo `FABRIC_FACTORY`, `FABRIC_FARM`, `FABRIC_ENERGY`, `FABRIC_MINING` ou `FABRIC_PHARMA`, os sufixos disponíveis são `_EVENTSTREAM_CONNECTION_STRING`, `_EVENTSTREAM_NAME`, `_KUSTO_URI`, `_KUSTO_DATABASE`, `_TELEMETRY_TABLE` e `_KUSTO_TENANT_ID`. Se todos estiverem vazios ou ausentes, o cenário usa as variáveis `FABRIC_*` compartilhadas, como antes. Se **qualquer um** tiver valor, nenhum campo de destino ou tenant é herdado do compartilhado; somente `FABRIC_KUSTO_SCOPE`, `FABRIC_POLL_MS` e `FABRIC_STALE_SEC` continuam comuns.
+
+A publicação específica precisa de connection string e, quando ela não contém `EntityPath`, do nome do Event Hub. A consulta específica precisa de URI, banco **e tabela**; tenant específico é opcional e, quando omitido, usa o tenant padrão da credencial, não o tenant compartilhado. Publicação e consulta são verificadas separadamente: uma configuração parcial deixa a operação incompleta não configurada, sem misturar destinos. Mesmo com `FABRIC_LOOPBACK=true`, um override parcial de consulta retorna erro em vez de emular ou consultar o destino compartilhado.
+
+Exemplo **ilustrativo**, com valores a obter no próprio ambiente privado; não cria nem conecta recursos:
+
+```env
+FABRIC_FARM_EVENTSTREAM_CONNECTION_STRING=<connection-string-do-eventstream-farm>
+FABRIC_FARM_EVENTSTREAM_NAME=<nome-do-event-hub-se-necessario>
+FABRIC_FARM_KUSTO_URI=<query-uri-do-eventhouse-farm>
+FABRIC_FARM_KUSTO_DATABASE=<banco-farm>
+FABRIC_FARM_TELEMETRY_TABLE=<tabela-farm>
+FABRIC_FARM_KUSTO_TENANT_ID=
+FOUNDRY_FARM_AGENT_NAME=<nome-do-agente-farm>
+```
+
+O Eventstream escolhido deve estar configurado para ingerir na tabela consultada; as variáveis não criam nem verificam esse encaminhamento. `GET /api/health?scenario=farm` mostra os indicadores do cenário solicitado e de todos os cenários em `scenarios`, sem expor credenciais. Esses indicadores verificam configuração, não conectividade, permissões ou ingestão. A consulta de telemetria/SSE e o simulador usam o destino do mesmo cenário.
+
+O proxy escolhe `FOUNDRY_<CENARIO>_AGENT_NAME` pelo `context.scenario` enviado pela aplicação, ou recorre a `FOUNDRY_AGENT_NAME` e depois a `FOUNDRY_AGENT_ID`. Uma troca de cenário inicia outra conversa, mesmo quando o agente é compartilhado; IDs de conversas específicas não reconhecidos após reiniciar o proxy também iniciam uma nova conversa. Isso é isolamento funcional, não autenticação do proxy.
+
+Para publicar um cenário específico pelo PowerShell:
+
+```powershell
+$env:SCENARIO='farm' # factory | farm | energy | mining | pharma
+npm run simulate:devices
+```
+
+Para publicar os cinco simultaneamente, execute um simulador por cenário, em terminais separados. Farm preserva combustível, velocidade, rebanho e clima; Mining preserva vazões, estoques, cargas, rejeitos, entregas e posições dos caminhões; Pharma preserva lotes, bloqueios, estoques e entregas em unidades equivalentes. Adicione as [colunas e os mapeamentos nativos](docs/setup-fabric-foundry.md#colunas-adicionais-para-smart-farm-smart-energy-smart-mining-e-smart-pharma) antes da ingestão. Campos ausentes não são preenchidos com valores simulados; ativos sem leitura recente ficam sem comunicação.
+
+O mesmo agente Foundry pode atender todos os cenários ou cada cenário pode usar seu próprio nome. Cada pergunta inclui o ID do cenário, a planta, os alertas, o ativo selecionado e as leituras disponíveis dos ativos. Configure as instruções e fontes de cada agente para os domínios atendidos; um agente ou Data Agent com dados somente de fábrica não ganha conhecimento dos outros domínios automaticamente. Veja como [conectar um Data Agent Fabric específico a cada agente Foundry](docs/setup-fabric-foundry.md#conectar-um-fabric-data-agent-por-cenário).
 
 ## Fabric Real-Time Intelligence
 
@@ -103,13 +195,15 @@ Para configurar a ingestão, localizar a connection string do Eventstream e a Qu
 
 ### Eventhouse
 
-O [de-para de equipamentos](docs/de-para-equipamentos.csv) contém os 16 códigos, descrições e tipos cadastrados em `app/src/shared/machines.js`, em CSV UTF-8. Use `machineId` para relacioná-lo à telemetria de `MachineTelemetry` e fornecer contexto ao Data Agent. É um cadastro estático de demonstração, não um registro de leituras ou estados atuais; atualize-o quando o cadastro de máquinas mudar.
+O [de-para de equipamentos](docs/de-para-equipamentos.csv) contém os 16 códigos, descrições e tipos cadastrados em `app/src/usecases/factory/catalog.js`, em CSV UTF-8. Use `machineId` para relacioná-lo à telemetria de `MachineTelemetry` e fornecer contexto ao Data Agent. É um cadastro estático de demonstração, não um registro de leituras ou estados atuais; atualize-o quando o cadastro de máquinas mudar.
 
-Crie um banco KQL e a única tabela usada pela integração:
+Crie um banco KQL e a tabela padrão da integração, ou configure outra tabela para cada cenário:
 
 ```kusto
-.create table MachineTelemetry (eventType:string, machineId:string, ts:datetime, temp:real, vib:real, usage:int, mode:string, speed:int, isRunning:bool)
+.create table MachineTelemetry (eventType:string, machineId:string, ts:datetime, temp:real, vib:real, usage:real, mode:string, speed:real, isRunning:bool)
 ```
+
+`usage` e `speed` devem ser `real` para preservar valores fracionários. Se uma tabela existente usar `int`, siga a [migração sem perda de dados](docs/setup-fabric-foundry.md#colunas-adicionais-para-smart-farm-smart-energy-smart-mining-e-smart-pharma); alterar diretamente o tipo invalida os valores históricos.
 
 Para uma tabela existente, adicione a coluna sem apagar dados:
 
@@ -133,7 +227,7 @@ O controle segue `UI → proxy HTTP → simulador`; a telemetria segue `simulado
 
 Configurações antigas: desative/remova no portal os filtros e destinos de parâmetros e comandos e publique o fluxo. As tabelas antigas podem permanecer para preservar o histórico, mas não são mais usadas. A antiga variável de tabela de parâmetros é ignorada. Em `MachineTelemetry`, acrescente `isRunning:bool` conforme descrito acima.
 
-O proxy consulta a última leitura por máquina e a transmite à SPA via SSE. Leituras mais antigas que `FABRIC_STALE_SEC` (15 segundos por padrão), ou máquinas sem leitura, são mostradas como sem comunicação.
+O proxy consulta a última leitura por máquina e a transmite à SPA via SSE. Leituras mais antigas que `FABRIC_STALE_SEC` (15 segundos por padrão), ou máquinas sem leitura, são mostradas como sem comunicação. Ajuste esse limite ao intervalo de envio e à latência de ingestão observada: um limite maior evita falsos alertas, mas também retarda a indicação de perda real de comunicação.
 
 Para testar o caminho do adaptador `fabric` sem recursos Fabric, defina `FABRIC_LOOPBACK=true` e `VITE_TELEMETRY_MODE=fabric`, depois inicie `npm run dev:all`. O loopback emula as operações em memória; não envia dados ao Fabric.
 
@@ -155,10 +249,16 @@ npm run preview
 
 O build da SPA é gerado em `dist/`. Para servir a versão buildada com a API, configure o `.env` e execute `npm run server`; o Express serve `dist/` quando a pasta existe. O `npm run preview` do Vite serve apenas o front-end e não inicia a API.
 
-Testes de controle local, telemetria Fabric e regressão do assistente (Node 24):
+Testes de controle, telemetria, assistente e recursos visuais (Node 24):
 
 ```bash
-node --experimental-test-module-mocks --test tests\agent.test.js tests\device-control.test.js tests\fabric.test.js tests\telemetry-state.test.js tests\farm.test.js tests\farm-layout.test.js tests\side-panels.test.js
+node --experimental-test-module-mocks --test tests\agent.test.js tests\device-control.test.js tests\fabric.test.js tests\telemetry-state.test.js tests\farm.test.js tests\farm-layout.test.js tests\side-panels.test.js tests\energy.test.js tests\energy-layout.test.js tests\energy-simulation.test.js tests\energy-fabric.test.js tests\visual-assets.test.js tests\scene-startup.test.js
+```
+
+Ou, de forma equivalente:
+
+```bash
+npm test
 ```
 
 Os testes isolam o Azure; os testes de controle usam um servidor HTTP local em porta temporária.
@@ -167,23 +267,46 @@ Os testes isolam o Azure; os testes de controle usam um servidor HTTP local em p
 
 ```text
 .env.example                 Modelo das variáveis; copie para .env na raiz
-docs/setup-fabric-foundry.md Setup do Eventstream, Eventhouse e agente Foundry
+docs/
+  setup-fabric-foundry.md     Setup do Eventstream, Eventhouse e agente Foundry
+  specs/                      Especificações funcional e não funcional (engenharia reversa)
 app/
   index.html                  Entrada da SPA (http://localhost:5173)
+  public/assets/energy/       Modelos GLB, texturas PBR locais e licenças
+  public/assets/farm/         Animais, textura de solo e licenças
   src/main.js                 Lê VITE_TELEMETRY_MODE e VITE_AGENT_MODE
-  src/shared/                 Modelo, regras de status e simulação
-  src/scene/                  Cena 3D Three.js
-  src/ui/                     Painéis, modal de parâmetros e assistente
+  src/core/                   Motor reativo genérico (store, state) — sem dados de catálogo
+  src/domain/                 Regras de status, física da simulação e schema de parâmetros
+                               (genéricos; reaproveitados por todos os casos de uso)
+  src/usecases/               Um caso de uso por pasta: catálogo de ativos, perfil de UI/KPIs
+                               e cena 3D (registry.js registra os cenários disponíveis)
+    factory/                  Smart Factory (16 máquinas) — mock ou Fabric/Foundry real
+    farm/                     Smart Farm (campo, rebanho, galpões) — mock ou Fabric/Foundry
+    energy/                   Catálogo/perfil, layout, simulação integrada, models, environment e scene
+    mining/                   Smart Mining: catálogo, layout, simulação e cena — mock ou Fabric/Foundry
+    pharma/                   Smart Pharma: catálogo, lotes, cadeia fria, perfil e cena 3D
+  src/ui/                     Painéis, modal de parâmetros e assistente (genérico, por perfil)
   src/integration/            Adaptadores telemetry (mock|fabric) e agent (mock|foundry)
 server/
-  index.js                    API Express em API_PORT (padrão 8787)
+  index.js                    API Express em API_PORT (padrão 8787), roteada por cenário
+  catalogs.js                 Registro dos catálogos de dispositivos disponíveis no proxy
   fabric.js                   Cliente Eventstream/Eventhouse (FABRIC_*)
   foundry.js                  Cliente Microsoft Foundry (FOUNDRY_*)
-  deviceSimulator.js          Simulador de dispositivos para o Eventstream
+  deviceSimulator.js          Simulador de dispositivos para o Eventstream (SCENARIO=<id>)
   deviceControl.js            Controle HTTP local dos dispositivos simulados
 tests/
   agent.test.js               Testes do adaptador do assistente
   device-control.test.js      Controle HTTP e aplicação no simulador
-  fabric.test.js              Publicação exclusiva de telemetria e consultas
+  fabric.test.js               Publicação exclusiva de telemetria e consultas
   telemetry-state.test.js     Estado da UI e efeitos dos comandos
+  farm.test.js, farm-layout.test.js, side-panels.test.js
+  energy.test.js              Catálogo, alertas e roteamento por cenário do Smart Energy
+  energy-layout.test.js       Contagens, conectividade e rotas fora dos lotes
+  energy-simulation.test.js   Água, energia, controles, bateria, tráfego e recarga
+  energy-fabric.test.js       Campos nativos e isolamento no caminho Fabric/SSE
+  mining.test.js              Fluxo, conservação de massa, controles, telemetria e assistente
+  pharma.test.js              Lotes, conservação, qualidade, cadeia fria, transporte e contexto
+  scenario-integrations.test.js Fabric/SSE e contexto Foundry nos cinco cenários
+  visual-assets.test.js       Carregamento e descarte dos recursos gráficos
+  scene-startup.test.js       Falhas 3D, recuperação e preservação da telemetria
 ```

@@ -1,10 +1,11 @@
 // Painel da máquina selecionada (métricas ao vivo, setpoints, comandos).
 import { $, el, setText, fmt, hms, toast } from './dom.js';
-import { store, selectMachine, openEditor, sendCommand } from '../state.js';
-import { MODES, TYPE_LABEL } from '../shared/machines.js';
-import { STATUS_LABEL } from '../shared/rules.js';
-import { activeScenario } from '../scenarios/index.js';
-import { metricsOf, metricOver, metricRatio } from '../scenarios/metrics.js';
+import { store, selectMachine, openEditor, sendCommand } from '../core/state.js';
+import { MODES } from '../domain/paramSchema.js';
+import { STATUS_LABEL } from '../domain/rules.js';
+import { activeScenario } from '../usecases/registry.js';
+import { metricsOf, metricOver, metricRatio } from '../domain/metrics.js';
+import { VEHICLE_STATE_LABELS } from '../domain/telemetry.js';
 
 export function mountInfoPanel({ onAsk, agentMode }) {
   const panel = $('#info-panel');
@@ -23,6 +24,10 @@ export function mountInfoPanel({ onAsk, agentMode }) {
     const cmd = sel.value;
     const m = store.state.byId[store.state.selectedId];
     if (!cmd || !m) return;
+    if (m.commLost && cmd !== 'RESUME' && cmd !== 'CYCLE_START') {
+      toast(`⚠️ ${m.id} está sem telemetria. Use Retomar etapa para tentar reconectar antes de enviar outros comandos.`, 'err');
+      return;
+    }
     const spec = activeScenario().commandsFor(m).find((c) => c.id === cmd);
     if (spec?.confirm && !confirm(`Confirmar ${spec.label} em ${m.id} — ${m.name}?`)) return;
     sel.value = '';
@@ -45,13 +50,17 @@ export function mountInfoPanel({ onAsk, agentMode }) {
     if (!m) { panel.classList.remove('visible'); return; }
     panel.classList.add('visible');
     setText($('#panel-name'), `${m.id} — ${m.name}`);
-    setText($('#panel-type'), m.typeLabel || TYPE_LABEL[m.type] || m.type);
+    setText($('#panel-type'), m.typeLabel || m.type);
     const sel = $('#cmd-select');
-    const cmds = activeScenario().commandsFor(m);
-    if (sel.dataset.family !== `${store.state.scenario}:${m.family || 'factory'}`) {
-      sel.dataset.family = `${store.state.scenario}:${m.family || 'factory'}`;
+    const available = activeScenario().commandsFor(m);
+    const cmds = m.commLost
+      ? available.filter((command) => ['RESUME', 'CYCLE_START'].includes(command.id))
+      : available;
+    const commandKey = `${store.state.scenario}:${m.family || 'factory'}:${m.commLost ? 'offline' : 'online'}`;
+    if (sel.dataset.family !== commandKey) {
+      sel.dataset.family = commandKey;
       sel.replaceChildren(
-        el('option', { value: '' }, '— Enviar comando —'),
+        el('option', { value: '' }, m.commLost ? '— Reconectar / retomar —' : '— Enviar comando —'),
         ...cmds.map((c) => el('option', { value: c.id }, c.label)),
       );
     }
@@ -87,6 +96,15 @@ export function mountInfoPanel({ onAsk, agentMode }) {
     const sum = $('#panel-params');
     const items = [
       ['Operação (telemetria)', m.isRunning ? 'Em funcionamento' : 'Parado'],
+      ...(s.scenario === 'pharma' ? [
+        ['Lote em atendimento', off ? '—' : m.batchId || 'Nenhum'],
+        ['Qualidade do lote', off ? '—' : m.batchStatus || 'Sem leitura'],
+      ] : []),
+      ...(m.vehicleState ? [
+        ['Mobilidade', VEHICLE_STATE_LABELS[m.vehicleState] || '—'],
+        ...(s.scenario === 'energy' ? [['Posto reservado', m.chargerId || 'Nenhum']] : []),
+      ] : []),
+      ...(Number.isFinite(m.supplyPct) ? [['Atendimento elétrico', `${fmt(m.supplyPct, 0)} %`]] : []),
       ...(m.location ? [['Localização', m.location]] : []),
       ...Object.keys(schema).map((k) => {
         const spec = schema[k];
@@ -102,9 +120,9 @@ export function mountInfoPanel({ onAsk, agentMode }) {
     });
 
     const who = s.operator?.login || 'm.silveira';
-    const via = s.scenario === 'farm' ? 'simulador da fazenda' : s.connection.mode === 'fabric' ? 'Fabric RTI' : 'simulador';
+    const via = s.connection.mode === 'fabric' ? 'Fabric RTI' : s.scenario === 'farm' ? 'simulador da fazenda' : 'simulador';
     setText($('#panel-hint'), off
-      ? `Sem leitura desde ${hms(new Date(m.lastSeen))} · comando executado como ${who} (envie RESUME para reconectar).`
+      ? `Sem leitura desde ${hms(new Date(m.lastSeen))} · envie RESUME para tentar reconectar antes de outros comandos (${who}).`
       : `Leitura ${hms(new Date(m.lastSeen))} via ${via} · comandos executados como ${who} e registrados no log.`);
   });
 }

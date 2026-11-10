@@ -1,13 +1,14 @@
 // HUD, lista de ativos, alertas, KPIs, sincronização Fabric, log e barra de status — todos reativos.
 import { $, el, setText, reconcile, fmt, hms } from './dom.js';
-import { store, selectMachine } from '../state.js';
-import { activeScenario } from '../scenarios/index.js';
+import { store, selectMachine } from '../core/state.js';
+import { activeScenario } from '../usecases/registry.js';
 
 export function hydrateChrome(profile) {
   const c = profile.chrome;
   document.title = profile.documentTitle;
   $('#app').dataset.scenario = profile.id;
   $('#wordmark').innerHTML = c.wordmark;
+  $('.brand-mark').setAttribute('aria-label', $('#wordmark').textContent);
   setText($('#page-title'), c.title);
   setText($('#page-sub'), c.subtitle);
   setText($('#op-avatar'), profile.operator.avatar);

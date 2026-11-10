@@ -1,18 +1,35 @@
 // Cliente do Microsoft Foundry Agent Service (Responses API).
 // Autenticação via Entra ID (DefaultAzureCredential): az login, managed identity, etc.
 import { getCredential } from './fabric.js';
+import { resolveScenario } from './catalogs.js';
 
-const cfg = () => ({
-  endpoint: process.env.FOUNDRY_PROJECT_ENDPOINT?.replace(/\/$/, ''),
-  agentName: process.env.FOUNDRY_AGENT_NAME || process.env.FOUNDRY_AGENT_ID,
-  legacyAgentId: process.env.FOUNDRY_AGENT_ID,
-  apiVersion: process.env.FOUNDRY_API_VERSION || 'v1',
-  scope: process.env.FOUNDRY_SCOPE || 'https://ai.azure.com/.default',
-  timeoutMs: Number(process.env.FOUNDRY_TIMEOUT_MS || 60000),
-  debug: process.env.FOUNDRY_DEBUG === 'true',
-});
+function cfg(scenario) {
+  const id = scenario === undefined ? undefined : resolveScenario(scenario);
+  const override = id && process.env[`FOUNDRY_${id.toUpperCase()}_AGENT_NAME`]?.trim();
+  const sharedName = process.env.FOUNDRY_AGENT_NAME;
+  const legacyAgentId = process.env.FOUNDRY_AGENT_ID;
+  return {
+    endpoint: process.env.FOUNDRY_PROJECT_ENDPOINT?.replace(/\/$/, ''),
+    agentName: override || sharedName || legacyAgentId,
+    legacyAgentId,
+    classic: !override && !sharedName && !!legacyAgentId?.startsWith('asst_'),
+    apiVersion: process.env.FOUNDRY_API_VERSION || '2025-11-15-preview',
+    scope: process.env.FOUNDRY_SCOPE || 'https://ai.azure.com/.default',
+    timeoutMs: Number(process.env.FOUNDRY_TIMEOUT_MS || 60000),
+    debug: process.env.FOUNDRY_DEBUG === 'true',
+  };
+}
 
-export const foundryConfigured = () => { const c = cfg(); return !!(c.endpoint && c.agentName); };
+export const foundryConfigured = (scenario) => { const c = cfg(scenario); return !!(c.endpoint && c.agentName); };
+
+const conversations = new Map();
+const MAX_CONVERSATIONS = 10000;
+function rememberConversation(id, scope) {
+  if (typeof id !== 'string' || !id) return;
+  conversations.delete(id);
+  conversations.set(id, scope);
+  if (conversations.size > MAX_CONVERSATIONS) conversations.delete(conversations.keys().next().value);
+}
 
 function logDebug(label, value) {
   console.log(`[foundry][debug] ${label}`);
@@ -118,6 +135,7 @@ export function withContext(message, ctx) {
   if (!ctx) return message;
   const s = ctx.summary || {};
   const lines = ['[Contexto ao vivo da planta — use para responder; não repita ao usuário]'];
+  if (ctx.scenario) lines.push(`Cenário: ${ctx.scenario}`);
   if (ctx.plant) lines.push(`Planta: ${ctx.plant}`);
   lines.push(`Resumo: ${s.online ?? 0} online, ${s.alert ?? 0} em alerta, ${s.offline ?? 0} offline (de ${s.total ?? 0}).`);
   for (const a of (ctx.alerts || []).slice(0, 20)) {
@@ -125,32 +143,42 @@ export function withContext(message, ctx) {
   }
   if (ctx.selected) {
     const { defaults, ...sel } = ctx.selected;
+    if (sel.commLost) sel.telemetry = null;
     lines.push(`Máquina selecionada: ${JSON.stringify(sel)}`);
+  }
+  if (Array.isArray(ctx.machines) && ctx.machines.length) {
+    lines.push(`Ativos e telemetria disponível: ${JSON.stringify(ctx.machines)}`);
   }
   return `${lines.join('\n')}\n\nPergunta do usuário:\n${message}`;
 }
 
 export async function chat({ message: userMessage, conversationId, threadId, context }) {
+  const scenario = context && Object.hasOwn(context, 'scenario') ? resolveScenario(context.scenario) : undefined;
   const message = withContext(userMessage, context);
-  const c = cfg();
-  if (!foundryConfigured()) {
+  const c = cfg(scenario);
+  if (!c.endpoint || !c.agentName) {
     throw Object.assign(new Error('Agente Foundry não configurado (FOUNDRY_PROJECT_ENDPOINT / FOUNDRY_AGENT_NAME).'), { status: 503 });
   }
 
-  const classic = c.legacyAgentId?.startsWith('asst_') && !process.env.FOUNDRY_AGENT_NAME;
-  const activeConversationId = conversationId || threadId;
+  const scope = JSON.stringify([scenario ?? null, c.endpoint, c.agentName, c.classic]);
+  const requestedId = conversationId || threadId;
+  const previousScope = requestedId && conversations.get(requestedId);
+  // Scoped IDs must be issued for this scenario and agent; unscoped legacy callers can resume their IDs.
+  const activeConversationId = previousScope === scope || (scenario === undefined && !previousScope)
+    ? requestedId : undefined;
   const startedAt = Date.now();
   if (c.debug) {
-    logDebug(`Requisição recebida · agente=${classic ? 'clássico' : c.agentName} · conversa=${activeConversationId?.slice(-6) || 'nova'}`);
+    logDebug(`Requisição recebida · agente=${c.classic ? 'clássico' : c.agentName} · conversa=${activeConversationId?.slice(-6) || 'nova'}`);
     logDebug(`Mensagem do usuário${context ? ' (com contexto da planta)' : ''}:`, message);
   }
 
   try {
     // IDs asst_ pertencem ao Agent Service clássico; agentes criados na nova UI
     // usam nomes e a Responses API com conversas.
-    const result = classic
+    const result = c.classic
       ? await chatWithClassicAgent(c, { message, threadId: activeConversationId })
       : await chatWithCurrentAgent(c, { message, conversationId: activeConversationId });
+    rememberConversation(result.conversationId, scope);
     if (c.debug) {
       logDebug(`Resposta do agente · conversa=${result.conversationId?.slice(-6) || '—'} · duração=${Date.now() - startedAt}ms`);
       logDebug('Mensagem do agente:', result.text);

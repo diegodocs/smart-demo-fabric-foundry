@@ -3,41 +3,75 @@
 //   • Leitura: Eventhouse / KQL Database via REST (/v1/rest/query) com token Entra ID.
 import { EventHubProducerClient } from '@azure/event-hubs';
 import { DefaultAzureCredential } from '@azure/identity';
+import { EXTRA_NUMBERS, EXTRA_STRINGS } from '../app/src/domain/telemetry.js';
+import { resolveScenario } from './catalogs.js';
 
 const env = (k, d) => process.env[k] || d;
 
-export const fabricConfig = () => ({
-  connectionString: env('FABRIC_EVENTSTREAM_CONNECTION_STRING'),
-  eventHubName: env('FABRIC_EVENTSTREAM_NAME'),
-  kustoUri: env('FABRIC_KUSTO_URI')?.replace(/\/$/, ''),
-  database: env('FABRIC_KUSTO_DATABASE'),
-  scope: env('FABRIC_KUSTO_SCOPE', 'https://kusto.kusto.windows.net/.default'),
-  telemetryTable: env('FABRIC_TELEMETRY_TABLE', 'MachineTelemetry'),
-  pollMs: Number(env('FABRIC_POLL_MS', 2000)),
-  staleSec: Number(env('FABRIC_STALE_SEC', 15)),
-});
+const targetKeys = [
+  'EVENTSTREAM_CONNECTION_STRING', 'EVENTSTREAM_NAME', 'KUSTO_URI',
+  'KUSTO_DATABASE', 'TELEMETRY_TABLE', 'KUSTO_TENANT_ID',
+];
 
-export const canPublish = (c = fabricConfig()) => !!c.connectionString;
-export const canQuery = (c = fabricConfig()) => !!(c.kustoUri && c.database);
+export function fabricConfig(scenario) {
+  const id = resolveScenario(scenario);
+  const prefix = `FABRIC_${id.toUpperCase()}`;
+  const scenarioSpecific = targetKeys.some((key) => process.env[`${prefix}_${key}`]?.trim());
+  // A partial scenario override must never inherit shared target fields.
+  const target = (key) => scenarioSpecific
+    ? process.env[`${prefix}_${key}`]?.trim() || undefined
+    : env(`FABRIC_${key}`);
+  return {
+    scenario: id,
+    scenarioSpecific,
+    connectionString: target('EVENTSTREAM_CONNECTION_STRING'),
+    eventHubName: target('EVENTSTREAM_NAME'),
+    kustoUri: target('KUSTO_URI')?.replace(/\/$/, ''),
+    database: target('KUSTO_DATABASE'),
+    scope: env('FABRIC_KUSTO_SCOPE', 'https://kusto.kusto.windows.net/.default'),
+    tenantId: target('KUSTO_TENANT_ID'),
+    telemetryTable: target('TELEMETRY_TABLE') || (scenarioSpecific ? undefined : 'MachineTelemetry'),
+    pollMs: Number(env('FABRIC_POLL_MS', 2000)),
+    staleSec: Number(env('FABRIC_STALE_SEC', 15)),
+  };
+}
+
+export const canPublish = (c = fabricConfig()) => !!(c.connectionString && (
+  !c.scenarioSpecific || c.eventHubName || /(?:^|;)\s*EntityPath\s*=\s*[^;\s]+/i.test(c.connectionString)
+));
+export const canQuery = (c = fabricConfig()) => !!(
+  c.kustoUri && c.database && (!c.scenarioSpecific || c.telemetryTable)
+);
 
 let credential;
 export const getCredential = () => (credential ??= new DefaultAzureCredential());
 
-let producer;
+const fabricCredentials = new Map();
+function getFabricCredential(tenantId) {
+  if (!tenantId) return getCredential();
+  if (!fabricCredentials.has(tenantId)) fabricCredentials.set(tenantId, new DefaultAzureCredential({ tenantId }));
+  return fabricCredentials.get(tenantId);
+}
+
+const producers = new Map();
 function getProducer(c) {
-  if (!producer) {
-    producer = c.eventHubName
+  const key = JSON.stringify([c.connectionString, c.eventHubName || '']);
+  if (!producers.has(key)) {
+    producers.set(key, c.eventHubName
       ? new EventHubProducerClient(c.connectionString, c.eventHubName)
-      : new EventHubProducerClient(c.connectionString); // EntityPath já vem na connection string
+      : new EventHubProducerClient(c.connectionString)); // EntityPath já vem na connection string
   }
-  return producer;
+  return producers.get(key);
 }
 
 /** Publica somente telemetria no Eventstream. */
 export async function publish(events, c = fabricConfig()) {
   if (events.some((e) => e.eventType !== 'telemetry')) throw new Error('O Fabric recebe somente eventos telemetry.');
   if (!events.length) return;
-  if (!canPublish(c)) throw Object.assign(new Error('Eventstream não configurado (FABRIC_EVENTSTREAM_CONNECTION_STRING).'), { status: 503 });
+  if (!canPublish(c)) {
+    const prefix = c.scenarioSpecific ? `FABRIC_${c.scenario.toUpperCase()}` : 'FABRIC';
+    throw Object.assign(new Error(`Eventstream não configurado (${prefix}_EVENTSTREAM_CONNECTION_STRING e, se necessário, ${prefix}_EVENTSTREAM_NAME).`), { status: 503 });
+  }
   const p = getProducer(c);
   const batch = await p.createBatch();
   for (const e of events) {
@@ -50,8 +84,12 @@ export async function publish(events, c = fabricConfig()) {
 
 /** Executa uma consulta KQL e devolve a primeira tabela como array de objetos. */
 export async function kql(csl, c = fabricConfig()) {
-  if (!canQuery(c)) throw Object.assign(new Error('Eventhouse não configurado (FABRIC_KUSTO_URI / FABRIC_KUSTO_DATABASE).'), { status: 503 });
-  const { token } = await getCredential().getToken(c.scope);
+  if (!canQuery(c)) {
+    const prefix = c.scenarioSpecific ? `FABRIC_${c.scenario.toUpperCase()}` : 'FABRIC';
+    const table = c.scenarioSpecific ? ` / ${prefix}_TELEMETRY_TABLE` : '';
+    throw Object.assign(new Error(`Eventhouse não configurado (${prefix}_KUSTO_URI / ${prefix}_KUSTO_DATABASE${table}).`), { status: 503 });
+  }
+  const { token } = await getFabricCredential(c.tenantId).getToken(c.scope);
   const res = await fetch(`${c.kustoUri}/v1/rest/query`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json; charset=utf-8', Accept: 'application/json' },
@@ -67,10 +105,19 @@ export async function kql(csl, c = fabricConfig()) {
 
 /** Última leitura de cada máquina (últimos 10 min) + horário de ingestão para medir latência. */
 export function latestTelemetry(c = fabricConfig()) {
+  const extraColumns = EXTRA_NUMBERS.map((k) => `${k} = todouble(column_ifexists("${k}", real(null)))`)
+    .concat(EXTRA_STRINGS.map((k) => `${k} = tostring(column_ifexists("${k}", ""))`)).join(', ');
   return kql(`${c.telemetryTable}
 | where ts > ago(10m)
 | extend ingestedAt = ingestion_time(), isRunning = coalesce(tobool(column_ifexists("isRunning", bool(null))), coalesce(mode !in ("off", "paused") and speed > 0, false))
-| summarize arg_max(ts, temp, vib, usage, mode, speed, isRunning, ingestedAt) by machineId`, c);
+| extend ${extraColumns}
+| summarize arg_max(ts, *) by machineId`, c);
 }
 
-export async function closeFabric() { await producer?.close(); producer = undefined; }
+export async function closeFabric() {
+  const closing = [...producers.values()];
+  producers.clear();
+  const results = await Promise.allSettled(closing.map((producer) => Promise.resolve().then(() => producer.close())));
+  const failures = results.filter((result) => result.status === 'rejected').map((result) => result.reason);
+  if (failures.length) throw new AggregateError(failures, 'Falha ao fechar produtores do Eventstream.');
+}

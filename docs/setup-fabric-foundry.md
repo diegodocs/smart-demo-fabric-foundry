@@ -13,10 +13,11 @@ Guia para ligar a SPA ao **Microsoft Fabric Real-Time Intelligence** e ao **Micr
 | `app/src/main.js` | Seleciona os modos de telemetria e agente. |
 | `app/src/integration/telemetry/` | Adaptadores mock e Fabric; usam `VITE_API_BASE` opcional. |
 | `app/src/integration/agent/` | Adaptadores mock e Foundry. |
-| `server/index.js` | Proxy: SSE, controle HTTP local e chat. |
+| `server/index.js` | Proxy: SSE, controle HTTP local e chat; roteia por `scenario` (padrão `factory`). |
+| `server/catalogs.js` | Registro dos catálogos de dispositivos disponíveis no proxy, por cenário. |
 | `server/deviceControl.js` | Estado desejado em memória para os dispositivos simulados. |
 | `server/fabric.js` | Publicação de telemetria e consultas ao Eventhouse. |
-| `server/deviceSimulator.js` | Busca controle no proxy, simula os dispositivos e publica telemetria. |
+| `server/deviceSimulator.js` | Busca controle no proxy, simula os dispositivos e publica telemetria (`SCENARIO=<id>` escolhe o catálogo). |
 | `server/foundry.js` | Integração com o agente Foundry. |
 
 ## Antes de editar o `.env`
@@ -27,9 +28,52 @@ Guia para ligar a SPA ao **Microsoft Fabric Real-Time Intelligence** e ao **Micr
 
 Sem Fabric nem Foundry, use `VITE_TELEMETRY_MODE=mock`, `VITE_AGENT_MODE=mock` e `npm run dev`.
 
+> **Múltiplos cenários:** Smart Factory, Smart Farm, Smart Energy, Smart Mining e Smart Pharma podem compartilhar Eventhouse/Eventstream e agente, como na configuração anterior, ou usar destinos e agentes específicos. Cada catálogo em `server/catalogs.js` tem IDs conhecidos e controle próprios; o proxy filtra por esses IDs. Os modos `VITE_TELEMETRY_MODE` e `VITE_AGENT_MODE` se aplicam a todos os cenários e são independentes.
+
+| Cenário | `SCENARIO` | Ativos |
+|---|---|---|
+| Smart Factory | `factory` | 16 máquinas |
+| Smart Farm | `farm` | 16 ativos de campo, rebanho e instalações |
+| Smart Energy | `energy` | 40 ativos de geração, distribuição e mobilidade |
+| Smart Mining | `mining` | 21 ativos: 4 caminhões de mina, 3 britagens, 6 silos e 3 centros, além das etapas compartilhadas |
+| Smart Pharma | `pharma` | 15 ativos: cinco setores da fábrica, cinco caminhões, dois centros de distribuição e três farmácias |
+
+A SPA envia o cenário ativo automaticamente. Para publicar Farm, por exemplo, use `$env:SCENARIO='farm'; npm run simulate:devices` no PowerShell. Troque o valor por qualquer ID da tabela; para ingestão simultânea, mantenha um simulador por cenário em terminais separados. Trocar a seleção na SPA não inicia nem reinicia os simuladores Node.
+
+Para que a UI inicie em Mining quando não houver seleção válida salva, configure `VITE_DEFAULT_SCENARIO=mining` e reinicie o Vite ou gere novamente o build. Os valores aceitos são os IDs da tabela; vazio ou inválido usa `factory`, e um valor inválido gera um aviso no console. Uma seleção válida salva em `localStorage` (`iot-scenario`) tem precedência: escolha Mining na UI ou remova essa chave do navegador para aplicar o padrão configurado. `SCENARIO` afeta somente o simulador, não a seleção inicial da UI.
+
+### Configuração isolada por cenário
+
+Os campos abaixo são opcionais para cada prefixo `FABRIC_FACTORY`, `FABRIC_FARM`, `FABRIC_ENERGY`, `FABRIC_MINING` e `FABRIC_PHARMA`:
+
+| Sufixo | Efeito |
+|---|---|
+| `_EVENTSTREAM_CONNECTION_STRING` | Connection string SAS do Eventstream específico. |
+| `_EVENTSTREAM_NAME` | Nome do Event Hub específico; necessário quando a connection string não contém `EntityPath`. |
+| `_KUSTO_URI`, `_KUSTO_DATABASE`, `_TELEMETRY_TABLE` | Query URI, banco e tabela específicos; os três são necessários para consultar esse cenário. |
+| `_KUSTO_TENANT_ID` | Tenant específico opcional. Se omitido, usa o padrão da credencial, não `FABRIC_KUSTO_TENANT_ID`. |
+
+Todos vazios/ausentes preservam o destino `FABRIC_*` compartilhado, inclusive o tenant e o padrão `MachineTelemetry`. Qualquer valor específico não vazio desativa **toda** a herança dos campos de destino para aquele cenário: connection string, nome, URI, banco, tabela e tenant não são combinados com os compartilhados. Publicação e consulta são verificadas separadamente; complete os campos da operação usada. As configurações comuns de escopo, polling e idade (`FABRIC_KUSTO_SCOPE`, `FABRIC_POLL_MS`, `FABRIC_STALE_SEC`) continuam herdadas. Um override parcial de consulta aparece como erro em SSE/health, inclusive com `FABRIC_LOOPBACK=true`; o simulador também recusa uma configuração de publicação incompleta.
+
+Exemplo **somente de formato**, a ser preenchido com valores do próprio ambiente:
+
+```env
+FABRIC_FARM_EVENTSTREAM_CONNECTION_STRING=<connection-string-do-eventstream-farm>
+FABRIC_FARM_EVENTSTREAM_NAME=<nome-do-event-hub-se-necessario>
+FABRIC_FARM_KUSTO_URI=<query-uri-do-eventhouse-farm>
+FABRIC_FARM_KUSTO_DATABASE=<banco-farm>
+FABRIC_FARM_TELEMETRY_TABLE=<tabela-farm>
+FABRIC_FARM_KUSTO_TENANT_ID=
+FOUNDRY_FARM_AGENT_NAME=<nome-do-agente-farm>
+```
+
+Uma connection string com `EntityPath` dispensa o nome. As variáveis não criam recursos nem conectam Eventstream e Eventhouse: confirme separadamente que o stream escolhido ingere na tabela configurada e que a identidade de consulta tem acesso. Cada simulador usa o destino do seu `SCENARIO`; o proxy consulta o destino do cenário solicitado. `GET /api/health?scenario=farm` mostra os indicadores do cenário selecionado e, em `scenarios`, de todos os demais, sem retornar credenciais. Esses indicadores verificam configuração, não conectividade, permissões ou ingestão. O parâmetro omitido usa `factory`; valores explícitos inválidos são rejeitados.
+
+Na implantação isolada, cada Eventstream pode usar um destino **Direct ingestion** para a tabela do seu próprio banco, com um mapeamento JSON de ingestão que cubra as colunas da tabela. A configuração processada com filtros descrita adiante é uma alternativa; não direcione os dois caminhos para a mesma tabela simultaneamente, para evitar duplicação.
+
 ## Fabric Eventstream + Eventhouse
 
-O Fabric recebe **somente `eventType=telemetry`**, em uma única tabela, `MachineTelemetry`.
+O Fabric recebe **somente `eventType=telemetry`**, por padrão na tabela compartilhada `MachineTelemetry`; uma tabela específica pode ser configurada por cenário.
 
 ```text
 Controle:   UI -> proxy HTTP -> simulador
@@ -83,24 +127,27 @@ Se você optou por armazenar `isRunning` como `string` no Eventhouse, o proxy no
 | `POST /api/commands` | Aplica o comando ao estado desejado no proxy. |
 | `GET /api/devices/control` | Entrega o estado desejado ao simulador. |
 | `GET /api/telemetry/stream` | Entrega à SPA a telemetria consultada no Eventhouse via SSE. |
+| `GET /api/health` | Mostra se publicação, consulta e agente estão configurados por cenário, sem segredos. |
 
 O simulador consulta o controle antes de cada envio, sem depender da latência de ingestão do Eventhouse. A confirmação `ack: true, delivery: local-control` significa **controle aceito em memória**, não execução física nem persistência no Fabric. O proxy perde esse estado ao reiniciar. Sem acesso ao proxy, o simulador registra `[control]` e continua com o último estado conhecido; isso não é um mecanismo de segurança industrial.
 
-Esse canal HTTP é para demonstração local, sem autenticação. Para equipamentos reais, substitua-o por uma integração de controle apropriada, com autenticação, confirmação de execução e mecanismos de segurança. A telemetria registra o estado observado, não constitui uma auditoria completa de todas as ações.
+Esse canal HTTP é para demonstração local, sem autenticação. Use `API_HOST=127.0.0.1` para restringir o proxy à máquina local; sem essa configuração, o Node escuta em todas as interfaces. Para equipamentos reais, substitua-o por uma integração de controle apropriada, com autenticação, confirmação de execução e mecanismos de segurança. A telemetria registra o estado observado, não constitui uma auditoria completa de todas as ações.
 
 ### Configuração mínima
 
 ```env
 VITE_TELEMETRY_MODE=fabric
 API_PORT=8787
+API_HOST=127.0.0.1
 FABRIC_EVENTSTREAM_CONNECTION_STRING="Endpoint=sb://...;SharedAccessKeyName=...;SharedAccessKey=...;EntityPath=..."
 FABRIC_EVENTSTREAM_NAME=
 FABRIC_KUSTO_URI=https://<query-uri-copiada-do-portal>
 FABRIC_KUSTO_DATABASE=IoTFactory
 FABRIC_KUSTO_SCOPE=https://kusto.kusto.windows.net/.default
+FABRIC_KUSTO_TENANT_ID=
 FABRIC_TELEMETRY_TABLE=MachineTelemetry
 FABRIC_POLL_MS=3000
-FABRIC_STALE_SEC=15
+FABRIC_STALE_SEC=90
 FABRIC_LOOPBACK=false
 DEVICE_INTERVAL_MS=2000
 DEVICE_CONTROL_URL=http://localhost:8787
@@ -114,10 +161,13 @@ DEVICE_CONTROL_URL=http://localhost:8787
 | `FABRIC_KUSTO_DATABASE` | Nome do banco, por exemplo `IoTFactory`. |
 | `FABRIC_TELEMETRY_TABLE` | Nome da tabela consultada; não cria nem configura o destino de ingestão. |
 | `FABRIC_KUSTO_SCOPE` | Escopo Entra ID; padrão `https://kusto.kusto.windows.net/.default`. |
+| `FABRIC_KUSTO_TENANT_ID` | Tenant opcional do Eventhouse; útil quando é diferente do tenant padrão usado pelo Foundry. A identidade ainda precisa de acesso ao banco. |
 | `FABRIC_POLL_MS` | Intervalo de consulta do proxy. |
-| `FABRIC_STALE_SEC` | Idade máxima da leitura antes de aparecer sem comunicação; padrão 15 segundos. |
+| `FABRIC_STALE_SEC` | Idade máxima da leitura antes de aparecer sem comunicação; padrão do proxy 15 segundos. O exemplo usa 90 segundos para acomodar latência real de ingestão. |
 | `DEVICE_INTERVAL_MS` | Pausa entre ciclos do simulador; padrão 2000 ms. Consultas e envios acrescentam tempo ao ciclo. |
 | `DEVICE_CONTROL_URL` | URL base do proxy; se omitida, usa `http://localhost:<API_PORT>`, com porta padrão 8787. |
+
+Ajuste `FABRIC_STALE_SEC` ao intervalo de publicação e à latência medida no seu ambiente. Um limite maior evita marcar leituras recentes como desconectadas, mas demora mais para sinalizar uma perda de comunicação real.
 
 ### Configurar e obter a ingestão em tempo real (Real-Time Intelligence)
 
@@ -128,7 +178,7 @@ Os nomes dos botões abaixo estão em inglês e podem variar conforme a versão 
 No [portal do Fabric](https://app.fabric.microsoft.com), abra um workspace com capacidade Fabric ou Trial e permissão Contributor ou superior. Crie um **Eventhouse** e um banco KQL, por exemplo `IoTFactory`. Abra o banco e, se a tabela ainda não existir, execute:
 
 ```kusto
-.create table MachineTelemetry (eventType:string, machineId:string, ts:datetime, temp:real, vib:real, usage:int, mode:string, speed:int, isRunning:bool)
+.create table MachineTelemetry (eventType:string, machineId:string, ts:datetime, temp:real, vib:real, usage:real, mode:string, speed:real, isRunning:bool)
 ```
 
 Se a tabela já existir sem `isRunning`, execute no banco KQL o comando abaixo para adicionar a coluna sem apagar dados:
@@ -138,6 +188,51 @@ Se a tabela já existir sem `isRunning`, execute no banco KQL o comando abaixo p
 ```
 
 Não recrie a tabela. Registros antigos continuam sem valor nessa coluna; o comando não preenche o histórico. Atualize também o schema/mapeamento do Eventstream conforme a etapa 6 e publique as alterações.
+
+### Colunas adicionais para Smart Farm, Smart Energy, Smart Mining e Smart Pharma
+
+Sem overrides, os quatro cenários usam o mesmo Eventstream/tabela da fábrica; com destinos separados, aplique as colunas e mapeamentos necessários a cada destino correspondente. A Smart Farm envia combustível, velocidade, rebanho e clima; a Smart Energy calcula água, geração, consumo, circuitos e mobilidade em conjunto; a Smart Mining calcula o balanço de massa, estoques, caminhões e entregas. A Smart Pharma envia unidades equivalentes, lotes em atendimento, bloqueios e entregas ao consumidor.
+
+`usage` e `speed` precisam ser `real`: vários cenários enviam utilização fracionária e o controle aceita velocidade fracionária. Esses valores podem ser ingeridos como nulos em colunas `int`. Para uma tabela existente com esses campos como `int`, preserve o histórico seguindo [Change column type without data loss](https://learn.microsoft.com/en-us/kusto/management/change-column-type-without-data-loss?view=microsoft-fabric): crie uma nova tabela com o mesmo schema e ordem de colunas, alterando os campos para `real`; copie os dados com `todouble(usage)` e `todouble(speed)`; replique mapeamentos e políticas necessários; e troque os nomes das tabelas. Pause os produtores durante a cópia e confira a nova ingestão antes de remover qualquer cópia. Valores fracionários que já foram ingeridos como nulos não podem ser recuperados da tabela antiga. Não use `.alter column` diretamente, pois o Kusto deixa os valores históricos dessas colunas nulos.
+
+Para receber as métricas nativas, adicione as colunas abaixo no banco KQL, sem apagar as existentes:
+
+```kusto
+.alter-merge table MachineTelemetry (
+  scenario:string,
+  fuel:real, humidity:real, nh3:real, activity:real, outside:real, speedKmh:real, headcount:real,
+  powerKw:real, demandKw:real, servedKw:real, unservedKw:real, energyKwh:real,
+  voltageV:real, loadPct:real, batteryPct:real, flowM3s:real, levelM:real,
+  spillM3s:real, supplyPct:real, irradiance:real, routeDistance:real,
+  positionX:real, positionZ:real, heading:real, chargeKw:real,
+  throughputTph:real, inventoryT:real, payloadT:real, extractedT:real, tailingsT:real, deliveredT:real,
+  inventoryUnits:real, receivedUnits:real, deliveredUnits:real, quarantinedUnits:real, processedBatches:real,
+  vehicleState:string, chargerId:string, batchId:string, batchStatus:string
+)
+```
+
+No schema/mapeamento JSON do destino do Eventstream (etapa 6), **mantenha os campos existentes** e acrescente cada coluna com o caminho JSON homônimo: `powerKw` → `$.powerKw`, `batteryPct` → `$.batteryPct`, `vehicleState` → `$.vehicleState`, etc. Números são `real`; `scenario`, `vehicleState`, `chargerId`, `batchId` e `batchStatus` são `string`. Publique o pipeline atualizado.
+
+| Campos | Unidade / significado |
+|---|---|
+| `fuel`, `humidity`, `nh3`, `activity`, `outside`, `headcount` | Combustível %, umidade %, amônia ppm, atividade %, animais fora da cerca e total de animais |
+| `powerKw`, `demandKw`, `servedKw`, `unservedKw`, `chargeKw` | kW: geração/transporte, demanda, atendimento, déficit e recarga |
+| `energyKwh` | kWh efetivamente gerados/consumidos pelo ativo |
+| `voltageV`, `loadPct`, `supplyPct`, `batteryPct` | V, carregamento %, atendimento %, bateria % |
+| `flowM3s`, `spillM3s`, `levelM`, `irradiance` | m³/s, m³/s, m, W/m² |
+| `positionX`, `positionZ`, `routeDistance`, `heading`, `speedKmh` | Coordenadas/distância da cena, orientação em radianos, km/h |
+| `throughputTph` | Vazão da mineração em t/h |
+| `inventoryT`, `payloadT`, `extractedT`, `tailingsT`, `deliveredT` | Estoque, carga do caminhão, extração, rejeitos e entregas em toneladas |
+| `inventoryUnits`, `receivedUnits`, `deliveredUnits`, `quarantinedUnits` | Unidades equivalentes farmacêuticas em processo, recebidas, entregues e bloqueadas |
+| `processedBatches` | Lotes processados na etapa; no controle de qualidade inclui aprovados e bloqueados |
+| `batchId`, `batchStatus` | Identificador do primeiro lote em atendimento e estado demonstrativo; não é um histórico regulatório |
+| `vehicleState`, `chargerId` | `driving`, `seeking`, `approaching`, `charging`, `leaving`, `stopped`, `loading`, `hauling`, `delivering`, `unloading` ou `returning`; ID do posto reservado ou string vazia |
+
+O proxy preserva esses campos na consulta e no SSE e isola o catálogo por IDs conhecidos. Consultas usam `column_ifexists`, portanto uma tabela antiga não quebra o cenário de fábrica; isso **não cria valores** para novos campos. Sem colunas/mapeamento, Farm, Energy, Mining e Pharma exibirão métricas indisponíveis. Todos os cenários iniciam sem comunicação no modo Fabric até receber leituras; dados ausentes ou antigos não são substituídos por dados mock.
+
+Em `fabric` real, Energy e Mining interpolam posições recebidas, e Pharma posiciona seus cinco caminhões pela telemetria recebida, sem rodar o simulador integrado nem criar métricas faltantes. Reinicie o proxy e o simulador Pharma após atualizar o catálogo para publicar os novos IDs; evite simuladores antigos e novos simultâneos para os mesmos IDs. Na Farm, as rotas 3D continuam sendo uma visualização ilustrativa da atividade, não rastreamento GPS. Um produtor físico pode enviar os mesmos campos, mas deverá definir suas próprias medições e coordenadas. O simulador e o controle HTTP continuam sendo exclusivamente demonstrativos.
+
+Estas instruções não alteram recursos automaticamente. A suíte cobre o caminho Fabric/SSE com respostas simuladas; uma validação real exige executar a ingestão e consultar o ambiente configurado.
 
 **2. Criar a fonte do Eventstream e copiar a connection string**
 
@@ -297,7 +392,7 @@ O total deve aumentar, e `TipoIncorreto` deve ser zero para os novos dados. Essa
 | O filtro produz saída, mas a tabela está vazia | Workspace/banco/tabela do destino, permissões de escrita, schema, publicação, ativação e erros do destino. |
 | A ação muda a UI, mas não a telemetria do simulador | Proxy atualizado, simulador em execução, `DEVICE_CONTROL_URL`, porta e erros `[control]`. |
 | Há campos vazios | Nomes, tipos, caminhos JSON e campos preservados após transformações. |
-| Há dados no KQL, mas a UI indica perda de comunicação | Horários atuais, tabela/banco do proxy e IDs em `app/src/shared/machines.js`. |
+| Há dados no KQL, mas a UI indica perda de comunicação | Horários atuais, tabela/banco do proxy e IDs em `app/src/usecases/factory/catalog.js` (ou no catálogo do cenário ativo, em `app/src/usecases/<cenário>/catalog.js`). |
 
 O proxy consulta os últimos 10 minutos. As 16 máquinas transmitem desde o início; o `ROB-003` começa parado e `RESUME` ou `CYCLE_START` coloca-o em funcionamento com velocidade 100. Ajustar `FABRIC_STALE_SEC` muda a tolerância da UI, mas não acelera a ingestão.
 
@@ -314,17 +409,32 @@ VITE_TELEMETRY_MODE=fabric
 FABRIC_LOOPBACK=true
 ```
 
-Execute somente `npm run dev:all`. O proxy aplica controle e simula telemetria em memória; não precisa do simulador separado e não envia dados ao Fabric.
+Execute somente `npm run dev:all`. O proxy aplica controle e simula telemetria em memória para os cinco cenários; não precisa do simulador separado e não envia dados ao Fabric. Alterne entre eles para conferir as métricas nativas e os controles isolados.
 
 ## Agente Foundry
 
 Crie um agente de prompt no projeto Foundry e anote o **nome** do agente. Conceda à identidade do proxy o papel **Azure AI User** no projeto.
 
+Por padrão o agente é compartilhado pelos cinco cenários. Opcionalmente, `FOUNDRY_FACTORY_AGENT_NAME`, `FOUNDRY_FARM_AGENT_NAME`, `FOUNDRY_ENERGY_AGENT_NAME`, `FOUNDRY_MINING_AGENT_NAME` e `FOUNDRY_PHARMA_AGENT_NAME` selecionam o agente pelo `context.scenario` enviado pela aplicação. Sem nome específico, usa `FOUNDRY_AGENT_NAME` e, na ausência deste, `FOUNDRY_AGENT_ID` clássico. A troca de cenário inicia uma nova conversa mesmo se ambos usam o mesmo agente; IDs específicos desconhecidos após reiniciar o proxy não são reutilizados. Esse isolamento não substitui autenticação.
+
+### Conectar um Fabric Data Agent por cenário
+
+Para manter os cinco domínios independentes, repita estas etapas para cada cenário:
+
+1. No workspace Fabric, crie um Data Agent e selecione apenas o banco KQL e a tabela `MachineTelemetry` daquele cenário, incluindo as colunas necessárias. Configure as instruções para o domínio e publique o agente com uma descrição clara.
+2. No projeto Foundry, crie uma conexão para o endpoint MCP do Data Agent publicado e adicione-a a uma toolbox exclusiva do cenário como ferramenta Fabric IQ. A identidade que faz a consulta precisa ter acesso ao Data Agent e aos dados no Fabric.
+3. Crie um agente Foundry de prompt para o cenário, conecte somente sua toolbox e configure o nome em `FOUNDRY_<CENARIO>_AGENT_NAME`. Oriente o agente a consultar o Data Agent, informar quando os dados estiverem indisponíveis e não inventar medições.
+4. Envie uma pergunta sobre uma leitura existente e confirme que a resposta incluiu uma chamada à ferramenta e os dados da tabela correta. `GET /api/health` não verifica essa conexão.
+
+Se a conexão usar autenticação delegada `UserEntraToken`, defina sua audiência como `https://api.fabric.microsoft.com` (sem `/.default`); sem ela, a resolução da conexão OBO pode falhar. Mantenha permissões e políticas de aprovação compatíveis com o ambiente. O endpoint MCP só fica disponível após a publicação; consulte a [documentação do Data Agent como servidor MCP](https://learn.microsoft.com/en-us/fabric/data-science/data-agent-mcp-server).
+
+O proxy anexa a cada pergunta o cenário (`factory`, `farm`, `energy`, `mining` ou `pharma`), a planta, o resumo de estados, os alertas, o ativo selecionado e as leituras disponíveis dos ativos; leituras indisponíveis aparecem como `null` na lista. Ajuste as instruções e as fontes de conhecimento do agente para os domínios desejados. Para Pharma, explicite que os dados são fictícios, não orientam fabricação e não autorizam liberação de medicamentos. Nenhuma ferramenta de controle de equipamentos é adicionada ao Foundry.
+
 ```env
 VITE_AGENT_MODE=foundry
 FOUNDRY_PROJECT_ENDPOINT=https://<recurso>.services.ai.azure.com/api/projects/<projeto>
 FOUNDRY_AGENT_NAME=<nome-do-agente>
-FOUNDRY_API_VERSION=v1
+FOUNDRY_API_VERSION=2025-11-15-preview
 FOUNDRY_SCOPE=https://ai.azure.com/.default
 FOUNDRY_DEBUG=false
 ```
@@ -333,15 +443,16 @@ FOUNDRY_DEBUG=false
 |---|---|
 | `FOUNDRY_PROJECT_ENDPOINT` | Endpoint da API do projeto, sem barra no final. |
 | `FOUNDRY_AGENT_NAME` | Nome do agente na UI atual, não o ID clássico `asst_...`. |
-| `FOUNDRY_API_VERSION` | Padrão `v1`, salvo exigência do projeto. |
+| `FOUNDRY_<CENARIO>_AGENT_NAME` | Nome opcional por cenário (`FACTORY`, `FARM`, `ENERGY`, `MINING` ou `PHARMA`), com precedência sobre o agente compartilhado. |
+| `FOUNDRY_API_VERSION` | Padrão `2025-11-15-preview` para hosted agents; ajuste conforme os detalhes da implantação. |
 | `FOUNDRY_SCOPE` | Padrão `https://ai.azure.com/.default`. |
 | `FOUNDRY_DEBUG` | `true` registra mensagens, payloads e respostas; pode expor conversas nos logs. |
 | `VITE_AGENT_DEBUG` | Log no navegador; vazio mantém ligado em desenvolvimento. |
 
-Para compatibilidade com o agente clássico, use `FOUNDRY_AGENT_ID=asst_...` somente sem `FOUNDRY_AGENT_NAME`.
+Para compatibilidade com o agente clássico, use `FOUNDRY_AGENT_ID=asst_...` sem `FOUNDRY_AGENT_NAME`; um nome específico de cenário, se definido, usa a API atual para esse cenário.
 
 ## Os dois juntos
 
-Combine os blocos de configuração do Fabric e Foundry no mesmo `.env`, com `VITE_TELEMETRY_MODE=fabric` e `VITE_AGENT_MODE=foundry`. Inicie SPA e proxy com `npm run dev:all` ou `.\dev.ps1 start`, e o simulador em outro terminal com `npm run simulate:devices`.
+Combine os blocos de configuração do Fabric e Foundry no mesmo `.env`, com `VITE_TELEMETRY_MODE=fabric` e `VITE_AGENT_MODE=foundry`. Inicie SPA e proxy com `npm run dev:all` ou `.\dev.ps1 start`, e o simulador em outro terminal com `npm run simulate:devices`, selecionando `SCENARIO` conforme a tabela inicial. Os dois serviços também podem ser usados separadamente, mantendo o outro modo em `mock`.
 
 Abra <http://localhost:5173>. Confira a telemetria em **Sincronização Fabric RTI** e abra **Assistente IoT** para enviar uma mensagem. Falhas do agente aparecem no chat e no console do proxy.

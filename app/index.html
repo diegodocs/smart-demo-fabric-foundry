@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AI Fabric — Central de Monitoramento IoT</title>
+  <title>Smart Factory — Central de Monitoramento IoT</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8F%AD%3C/text%3E%3C/svg%3E" />
   <link rel="stylesheet" href="./src/styles.css" />
 </head>
@@ -14,7 +14,7 @@
   <!-- ─── Top bar ─────────────────────────────────────────────────────────── -->
   <header id="topbar">
     <div class="brand">
-      <div class="brand-mark" aria-label="AI Fabric">
+      <div class="brand-mark" aria-label="Smart Factory">
         <svg viewBox="0 0 40 40" width="34" height="34" aria-hidden="true">
           <defs>
             <linearGradient id="bm-g" x1="0" y1="0" x2="1" y2="1">
@@ -25,11 +25,11 @@
           <circle cx="31" cy="27" r="5" fill="none" stroke="#a78bfa" stroke-width="2" />
           <circle cx="31" cy="27" r="1.8" fill="#e9d5ff" />
         </svg>
-        <span class="wordmark" id="wordmark">AI <b>Fabric</b></span>
+        <span class="wordmark" id="wordmark">Smart <b>Factory</b></span>
       </div>
       <div class="divider"></div>
       <div class="titles">
-        <h1 id="page-title">Central de Monitoramento IoT — Chão de Fábrica</h1>
+        <h1 id="page-title">Central de Monitoramento IoT — Smart Factory</h1>
         <p id="page-sub">Unidade Industrial Guarulhos · Linha A · Turno 2 (14:00 – 22:00)</p>
       </div>
     </div>
@@ -38,8 +38,11 @@
       <label class="scenario-switch">
         Simulação
         <select id="scenario-select" aria-label="Tipo de simulação">
-          <option value="factory">Chão de fábrica</option>
-          <option value="farm">AI Farm</option>
+          <option value="factory">Smart Factory</option>
+          <option value="farm">Smart Farm</option>
+          <option value="energy">Smart Energy</option>
+          <option value="mining">Smart Mining</option>
+          <option value="pharma">Smart Pharma</option>
         </select>
       </label>
       <div class="clock">
@@ -113,7 +116,7 @@
     <div id="canvas-container"></div>
 
     <div id="hud">
-      <h1 id="hud-title">🏭 IoT Factory Floor <small>SPA · reativa · Fabric RTI</small></h1>
+      <h1 id="hud-title">🏭 Smart Factory <small>SPA · reativa · Fabric RTI</small></h1>
       <div class="stats">
         <div class="stat"><div class="label">Online</div><div class="value online" id="stat-online">—</div></div>
         <div class="stat"><div class="label">Alerta</div><div class="value alert" id="stat-alert">—</div></div>
@@ -205,7 +208,7 @@
     </div>
     <div class="group">
       <span class="item">Última sincronização: <b id="last-update">—</b></span>
-      <span class="item" id="footer-brand">AI Fabric · Real-Time Intelligence + Foundry Agents · v1.0.0</span>
+      <span class="item" id="footer-brand">Smart Factory · Real-Time Intelligence + Foundry Agents · v1.0.0</span>
     </div>
   </footer>
 </div>

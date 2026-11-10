@@ -25,7 +25,7 @@ Material curto para demonstracao do Dashboard IoT. **Nao utilizar estes valores 
 
 ## Como interpretar a configuracao
 
-Os valores sugeridos seguem os campos de `app/src/shared/machines.js`; nao alteram o cadastro nem representam telemetria atual. CNC-003, FKL-003 e INJ-002 recebem alvos ficticios menores que seus limites de alarme, pois seus alvos originais ja excedem esses limites.
+Os valores sugeridos seguem os campos de `app/src/usecases/factory/catalog.js`; nao alteram o cadastro nem representam telemetria atual. CNC-003, FKL-003 e INJ-002 recebem alvos ficticios menores que seus limites de alarme, pois seus alvos originais ja excedem esses limites.
 
 | Campo | Significado e faixa aceita pelo dashboard |
 |---|---|

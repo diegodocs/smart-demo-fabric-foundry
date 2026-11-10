@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createFarmAssets, farmProfile } from '../app/src/scenarios/farm.js';
-import { evaluate } from '../app/src/shared/rules.js';
-import { step } from '../app/src/shared/simulation.js';
-import { createMachines } from '../app/src/shared/machines.js';
+import { createFarmAssets } from '../app/src/usecases/farm/catalog.js';
+import { farmProfile } from '../app/src/usecases/farm/profile.js';
+import { evaluate } from '../app/src/domain/rules.js';
+import { step } from '../app/src/domain/simulation.js';
+import { createMachines } from '../app/src/usecases/factory/catalog.js';
 
 test('farm catalog covers field machines, herds and barns', () => {
   const assets = createFarmAssets();
@@ -46,6 +47,6 @@ test('running field equipment burns fuel and herd commands omit speed up', () =>
   const herd = farmProfile.commandsFor({ family: 'herd' }).map((c) => c.id);
   assert.equal(herd.includes('SPEED_UP'), false);
   assert.equal(herd.includes('EMERGENCY_STOP'), true);
-  assert.equal(farmProfile.forceMock, true);
+  assert.equal(farmProfile.forceMock, false);
   assert.equal(farmProfile.commandsFor({ family: 'field' }).some((c) => c.id === 'SPEED_UP'), true);
 });

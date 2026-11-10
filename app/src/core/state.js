@@ -1,0 +1,202 @@
+// Estado da aplicação + ações (única forma de alterar o store). Genérico: não conhece nenhum
+// catálogo específico — a lista real de ativos é populada por resetScenario() assim que um
+// caso de uso é ativado (ver usecases/registry.js e main.js), logo na carga da SPA.
+import { createStore } from './store.js';
+import { MODES } from '../domain/paramSchema.js';
+import { evaluate } from '../domain/rules.js';
+import { effectiveSpeed } from '../domain/simulation.js';
+import { EXTRA_NUMBERS, EXTRA_STRINGS, extraTelemetry } from '../domain/telemetry.js';
+
+export const store = createStore({
+  machines: [],
+  byId: {},
+  selectedId: null,
+  editingId: null,
+  log: [],
+  kpis: { pieces: 0, commands: 0, paramChanges: 0, unplanned: 0 },
+  connection: {
+    mode: 'mock', status: 'connecting', detail: '', lastSync: null,
+    latencyMs: null, eventsIn: 0, eventsOut: 0,
+  },
+  scenario: 'factory',
+  plant: '',
+  operator: { login: '', name: '' },
+});
+
+let source = null;
+export function attachTelemetrySource(s) { source = s; }
+
+const now = () => new Date();
+
+function addLog(entry) {
+  store.state.log.unshift({ ts: now(), ...entry });
+  store.state.log.length = Math.min(store.state.log.length, 60);
+}
+
+function syncDerived(m) {
+  if (m.base?.speedKmh != null) {
+    m.speedKmh = Math.round((effectiveSpeed(m) / 100) * m.base.speedKmh * 10) / 10;
+  }
+}
+
+export function resetScenario(machines, kpis, meta = {}) {
+  machines.forEach((m) => {
+    syncDerived(m);
+    Object.assign(m, evaluate(m));
+  });
+  store.update(['machines', 'selection', 'log', 'kpis', 'connection', 'scenario'], (s) => {
+    s.machines = machines;
+    s.byId = Object.fromEntries(machines.map((m) => [m.id, m]));
+    s.selectedId = null;
+    s.editingId = null;
+    s.log = [];
+    s.kpis = { ...kpis };
+    s.scenario = meta.scenario || 'factory';
+    s.plant = meta.plant || s.plant;
+    s.operator = meta.operator || s.operator;
+    s.connection.eventsIn = 0;
+    s.connection.eventsOut = 0;
+    s.connection.lastSync = null;
+  });
+}
+
+function reevaluate(m, { derive = true } = {}) {
+  if (derive) syncDerived(m);
+  const prev = m.status;
+  Object.assign(m, evaluate(m));
+  if (prev !== m.status) {
+    addLog({ kind: 'status', machineId: m.id, text: `${m.id}: ${labelOf(prev)} → ${labelOf(m.status)}` });
+    if (m.status === 'offline' && prev !== 'offline') store.state.kpis.unplanned += m.params.mode === 'off' ? 0 : 1;
+    return true;
+  }
+  return false;
+}
+const labelOf = (s) => ({ online: 'Online', alert: 'Alerta', offline: 'Offline' }[s] || s);
+
+// ─── Seleção ────────────────────────────────────────────────────────────────
+export function selectMachine(id) {
+  store.update('selection', (s) => { s.selectedId = id; });
+}
+export function openEditor(id) {
+  store.update('selection', (s) => { s.editingId = id; s.selectedId = id; });
+}
+export function closeEditor() {
+  store.update('selection', (s) => { s.editingId = null; });
+}
+
+// ─── Telemetria (vinda do Fabric RTI ou do simulador) ───────────────────────
+export function applyTelemetry(items, meta = {}) {
+  const topics = new Set(['machines', 'kpis']);
+  const { byId } = store.state;
+  for (const t of items) {
+    const m = byId[t.machineId];
+    if (!m) continue;
+    if (t.commLost !== undefined) m.commLost = !!t.commLost;
+    if (typeof t.isRunning === 'boolean') m.isRunning = t.isRunning;
+    if (t.temp !== undefined) { m.temp = +t.temp; m.vib = +t.vib; m.usage = +t.usage; }
+    if (store.state.connection.mode === 'fabric' || ['energy', 'mining', 'pharma'].includes(store.state.scenario)) {
+      for (const key of [...EXTRA_NUMBERS, ...EXTRA_STRINGS]) delete m[key];
+    }
+    Object.assign(m, extraTelemetry(t));
+    if (!m.lastControlAt || new Date(t.ts).getTime() >= m.lastControlAt) {
+      if (Object.hasOwn(MODES, t.mode)) m.params.mode = t.mode;
+      if (Number.isFinite(t.speed)) m.params.speed = t.speed;
+    }
+    if (!m.commLost) m.lastSeen = t.ts ? new Date(t.ts).getTime() : Date.now();
+    if (reevaluate(m, { derive: false })) topics.add('log');
+    topics.add(`machine:${m.id}`);
+  }
+  store.update([...topics, 'connection'], (s) => {
+    s.connection.lastSync = now();
+    s.connection.eventsIn += items.length;
+    if (meta.latencyMs != null) s.connection.latencyMs = meta.latencyMs;
+    // produção acumulada (peças): conceito específico do chão de fábrica — outros casos de uso
+    // (farm, energy, mining) não acumulam "peças produzidas" e definem seus próprios KPIs em kpiRows().
+    const dt = meta.dtSec || 1;
+    if (s.scenario === 'factory') {
+      s.kpis.pieces += s.machines.reduce((acc, m) => (m.status === 'offline' || m.params.mode === 'paused' || m.isRunning === false)
+        ? acc : acc + (dt / m.params.cycleTime) * (m.params.speed / 100) * 6, 0);
+    }
+  });
+}
+
+export function setConnection(patch) {
+  const unavailable = (patch.mode ?? store.state.connection.mode) === 'fabric' && patch.status === 'error';
+  const topics = ['connection'];
+  if (unavailable) {
+    topics.push('machines', ...store.state.machines.map((m) => `machine:${m.id}`));
+  }
+  store.update(topics, (s) => {
+    Object.assign(s.connection, patch);
+    if (unavailable) {
+      for (const m of s.machines) {
+        m.commLost = true;
+        Object.assign(m, evaluate(m));
+      }
+    }
+  });
+}
+
+// ─── Parâmetros ─────────────────────────────────────────────────────────────
+// preview: reflete imediatamente na UI/cena (limites, modo, velocidade) sem publicar no dispositivo.
+export function previewParams(id, params) {
+  const m = store.state.byId[id];
+  if (!m) return;
+  Object.assign(m.params, params);
+  reevaluate(m);
+  store.update(['machines', `machine:${id}`, 'log']);
+}
+
+export async function commitParams(id, params, { origin = 'Ajuste de parâmetros', prev } = {}) {
+  const m = store.state.byId[id];
+  if (!m) return;
+  const before = prev || { ...m.params };
+  Object.assign(m.params, params);
+  m.lastControlAt = Date.now();
+  reevaluate(m);
+  const diff = Object.keys(params).filter((k) => before[k] !== params[k]);
+  const text = diff.length
+    ? diff.map((k) => `${k}: ${fmtParam(k, before[k])} → ${fmtParam(k, params[k])}`).join(' · ')
+    : 'sem alterações';
+  addLog({ kind: 'params', machineId: id, text: `${id} · ${origin}: ${text}` });
+  store.update(['machines', `machine:${id}`, 'log', 'kpis'], (s) => { if (diff.length) s.kpis.paramChanges++; });
+  if (!source) return;
+  try {
+    await source.publishParams(id, { ...m.params });
+    store.update('connection', (s) => { s.connection.eventsOut++; });
+  } catch (e) {
+    addLog({ kind: 'error', machineId: id, text: `Falha ao sincronizar parâmetros de ${id}: ${e.message}` });
+    store.update('log');
+    throw e;
+  }
+}
+
+const fmtParam = (k, v) => (k === 'mode' ? MODES[v] || v : v);
+
+// ─── Comandos (mesmos da v2), agora com efeito real no estado ───────────────
+export async function sendCommand(id, cmd) {
+  const m = store.state.byId[id];
+  if (!m) return;
+  const p = { ...m.params };
+  switch (cmd) {
+    case 'EMERGENCY_STOP': p.mode = 'off'; p.speed = 0; break;
+    case 'PAUSE': p.mode = 'paused'; break;
+    case 'RESUME': p.mode = 'auto'; if (!p.speed) p.speed = m.defaults.speed; break;
+    case 'CYCLE_START': p.mode = 'auto'; if (!p.speed) p.speed = m.defaults.speed; break;
+    case 'SPEED_UP': p.speed = Math.min(m.speedMax ?? 130, p.speed + 10); break;
+    case 'SLOW_DOWN': p.speed = Math.max(0, p.speed - 10); break;
+    default: break;
+  }
+  store.update('kpis', (s) => { s.kpis.commands++; });
+  if (source?.sendCommand) {
+    try {
+      await source.sendCommand(id, cmd);
+      store.update('connection', (s) => { s.connection.eventsOut++; });
+    } catch (e) {
+      addLog({ kind: 'error', machineId: id, text: `Falha no comando ${cmd}: ${e.message}` });
+      store.update('log');
+      throw e;
+    }
+  }
+  await commitParams(id, p, { origin: `Comando ${cmd}` });
+}

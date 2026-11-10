@@ -6,8 +6,8 @@
   "source": {
     "kind": "mock",
     "files": [
-      "app/src/shared/machines.js",
-      "app/src/shared/rules.js",
+      "app/src/usecases/factory/catalog.js",
+      "app/src/domain/rules.js",
       "app/src/integration/agent/context.js"
     ],
     "scope": "Estado inicial dos 16 ativos cadastrados no projeto, antes de executar a simulação ou aplicar comandos e ajustes.",

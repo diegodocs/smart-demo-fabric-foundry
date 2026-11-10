@@ -1,8 +1,8 @@
 // Foundry: conversa direta. Mock: assistente local com contexto da planta.
 import { $, el, esc, setText } from './dom.js';
-import { store } from '../state.js';
+import { store } from '../core/state.js';
 import { buildContext } from '../integration/agent/context.js';
-import { activeScenario } from '../scenarios/index.js';
+import { activeScenario } from '../usecases/registry.js';
 
 const md = (t) => esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/`([^`]+)`/g, '<code>$1</code>');
 
@@ -13,6 +13,7 @@ export function mountAssistant(agent) {
   const chips = $('#as-chips');
   let agentRef = agent;
   let busy = false;
+  let binding = 0;
 
   function applyAgent(next) {
     agentRef = next;
@@ -47,18 +48,21 @@ export function mountAssistant(agent) {
     input.value = '';
     addMsg('user', text);
     const typing = addMsg('bot typing', agentRef.mode === 'mock' ? 'Analisando telemetria' : 'Aguardando Foundry…');
+    const activeBinding = binding;
     try {
       const res = await agentRef.send(text, buildContext(store.state));
       typing.remove();
-      addMsg('bot', res.text, res.source);
+      if (activeBinding === binding) addMsg('bot', res.text, res.source);
     } catch (e) {
       typing.remove();
-      addMsg('bot err', `Não consegui falar com o agente: ${e.message}`);
+      if (activeBinding === binding) addMsg('bot err', `Não consegui falar com o agente: ${e.message}`);
     } finally {
-      busy = false;
-      $('#as-send').disabled = false;
-      $('#as-clear').disabled = false;
-      input.focus();
+      if (activeBinding === binding) {
+        busy = false;
+        $('#as-send').disabled = false;
+        $('#as-clear').disabled = false;
+        input.focus();
+      }
     }
   }
 
@@ -101,6 +105,10 @@ export function mountAssistant(agent) {
   });
 
   function bind(next) {
+    binding++;
+    busy = false;
+    $('#as-send').disabled = false;
+    $('#as-clear').disabled = false;
     applyAgent(next);
     msgs.replaceChildren();
     chips.dataset.key = '';

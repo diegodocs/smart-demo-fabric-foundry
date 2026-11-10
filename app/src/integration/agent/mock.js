@@ -41,17 +41,25 @@ const KB = {
 
 const fmt = (n, d = 0) => Number(n).toLocaleString('pt-BR', { minimumFractionDigits: d, maximumFractionDigits: d });
 
+// fuel/humidity/activity/outside são canais genéricos reaproveitados por outros casos de uso
+// (farm, energy) com significados físicos diferentes; o rótulo vem do catálogo do ativo
+// (m.metrics), caindo para o nome histórico da fábrica/fazenda quando o ativo não o declara.
+function limitLabel(m, limitKey, fallbackLabel) {
+  const metric = m.metrics?.find((x) => x.limit === limitKey);
+  return { label: (metric?.label || fallbackLabel).toLowerCase(), unit: metric?.unit || '' };
+}
+
 function describeParams(m) {
   const p = m.params;
   const bits = [`Modo ${p.modeLabel || p.mode}`, `velocidade ${p.speed}%`];
   if (p.targetTemp != null) bits.push(`temperatura alvo ${fmt(p.targetTemp)} °C`);
   if (p.tempLimit != null) bits.push(`limite de temperatura ${fmt(p.tempLimit)} °C`);
   if (p.vibLimit != null) bits.push(`limite de vibração ${fmt(p.vibLimit, 1)} mm/s`);
-  if (p.fuelMin != null) bits.push(`combustível mínimo ${fmt(p.fuelMin)} %`);
-  if (p.humidityLimit != null) bits.push(`limite de umidade ${fmt(p.humidityLimit)} %`);
+  if (p.fuelMin != null) { const { label, unit } = limitLabel(m, 'fuelMin', 'combustível'); bits.push(`${label} mínimo ${fmt(p.fuelMin)} ${unit || '%'}`); }
+  if (p.humidityLimit != null) { const { label, unit } = limitLabel(m, 'humidityLimit', 'umidade'); bits.push(`limite de ${label} ${fmt(p.humidityLimit)} ${unit || '%'}`); }
   if (p.nh3Limit != null) bits.push(`limite de amônia ${fmt(p.nh3Limit)} ppm`);
-  if (p.activityLimit != null) bits.push(`limite de atividade ${fmt(p.activityLimit)} %`);
-  if (p.outsideLimit != null) bits.push(`cerca ${fmt(p.outsideLimit)} animais`);
+  if (p.activityLimit != null) { const { label, unit } = limitLabel(m, 'activityLimit', 'atividade'); bits.push(`limite de ${label} ${fmt(p.activityLimit)} ${unit || '%'}`); }
+  if (p.outsideLimit != null) { const { label, unit } = limitLabel(m, 'outsideLimit', 'fora da cerca'); bits.push(`${label} máximo ${fmt(p.outsideLimit)} ${unit}`.trim()); }
   if (p.cycleTime != null) bits.push(`ciclo ${p.cycleTime} s`);
   return `${bits.join(', ')}.`;
 }
@@ -83,15 +91,19 @@ function explainStatus(m, table = KB) {
     if (tempHigh) lines.push(`• Reduza a velocidade (SLOW_DOWN) ou a temperatura alvo — hoje ${fmt(m.params.targetTemp)} °C; algo abaixo de ${fmt(m.params.tempLimit * 0.95)} °C deve normalizar.`);
     if (vibHigh) lines.push(`• Reduza a velocidade para ~${Math.max(50, m.params.speed - 20)}% ou aplique PAUSE e solicite inspeção mecânica.`);
     if (Number.isFinite(t.fuel) && Number.isFinite(m.params.fuelMin) && t.fuel <= m.params.fuelMin) {
-      lines.push('• Combustível abaixo do mínimo: reduza a velocidade e retorne para abastecer.');
+      const { label } = limitLabel(m, 'fuelMin', 'combustível');
+      lines.push(`• ${label[0].toUpperCase()}${label.slice(1)} abaixo do mínimo: reduza a carga e normalize a condição antes de continuar.`);
     }
     if (Number.isFinite(t.nh3) && Number.isFinite(m.params.nh3Limit) && t.nh3 >= m.params.nh3Limit) {
       lines.push('• Amônia elevada: aumente a ventilação e verifique cama ou aeração.');
     }
     if (Number.isFinite(t.outside) && Number.isFinite(m.params.outsideLimit) && t.outside > m.params.outsideLimit) {
-      lines.push('• Há animais fora da cerca: use localizar lote e, se preciso, contenha o lote.');
+      const { label } = limitLabel(m, 'outsideLimit', 'fora da cerca');
+      lines.push(`• ${label[0].toUpperCase()}${label.slice(1)} acima do limite: verifique e normalize a condição.`);
     }
     if (m.params.mode === 'paused') lines.push('• Operação pausada: envie RESUME quando a condição for liberada.');
+    if (t.unservedKw > 0.01) lines.push('• Há déficit na rede: verifique geração solar/hídrica e os três circuitos. O atendimento é repartido proporcionalmente entre casas e recarga.');
+    if (t.batteryPct <= 20) lines.push('• O veículo procura um posto compatível com bateria em 20% ou menos; a recarga termina em 80%. Sem fornecimento elétrico a bateria não recarrega.');
     if (kb?.causes?.length) lines.push('', `Causas comuns em ${(m.typeLabel || m.type).toLowerCase()}:`, ...kb.causes.slice(0, 3).map((c) => `• ${c}`));
   }
   return lines.join('\n');
@@ -108,6 +120,11 @@ function plantSummary(ctx) {
 }
 
 function findMachine(text, ctx) {
+  const energyId = text.toUpperCase().match(/\b[A-Z]{3}-[A-Z]{3}-\d{3}\b/);
+  if (energyId) {
+    const item = ctx.machines.find((m) => m.id === energyId[0]);
+    if (item) return ctx.selected?.id === item.id ? ctx.selected : { ...item, partial: true };
+  }
   const id = text.toUpperCase().match(/\b([A-Z]{3})-?(\d{3})\b/);
   if (id) {
     const key = `${id[1]}-${id[2]}`;
@@ -127,11 +144,14 @@ export function answer(text, ctx, snapshotOf, pack = null) {
   let m = findMachine(text, ctx);
   if (m?.partial && snapshotOf) m = snapshotOf(m.id);
   const kb = m ? table[m.type] : null;
+  const commandRequest = /comando|emergenc|parar|pausar|retomar|conter|exaust/.test(q);
+  const commands = () => pack?.commands || 'Comandos disponíveis:\n• EMERGENCY_STOP — desliga imediatamente (modo Desligado)\n• PAUSE / RESUME — pausa e retoma o ciclo\n• SPEED_UP / SLOW_DOWN — ±10% de velocidade\n• CALIBRATE — recalibra sensores de vibração\n• CYCLE_START — inicia ciclo em modo Automático';
 
   if (/resumo|planta|fazenda|rebanho|talh[aã]o|geral|todas|quais.*(alerta|máquinas)|status da linha/.test(q) || (!m && /alerta|alarme|status/.test(q))) {
-    return plantSummary(ctx);
+    return [plantSummary(ctx), pack?.summary?.(ctx)].filter(Boolean).join('\n\n');
   }
   if (!m) {
+    if (commandRequest) return commands();
     return pack?.empty || 'Posso explicar o funcionamento, alarmes, parâmetros e manutenção de qualquer máquina da linha.\nSelecione um ativo na cena ou cite o código (ex.: "Por que a INJ-002 está em alerta?").';
   }
   if (/funciona|o que (é|faz)|como opera|princípio/.test(q)) {
@@ -144,21 +164,19 @@ export function answer(text, ctx, snapshotOf, pack = null) {
     const standard = describeParams({ params: { ...m.defaults, modeLabel: m.defaults.mode } });
     return `Parâmetros de ${m.id}: ${describeParams(m)}\n\nPadrão do ativo: ${standard}\n\nDica: use "⚙️ Ajustar parâmetros" — a pré-visualização mostra o efeito antes de aplicar.`;
   }
-  if (/comando|emergenc|parar|pausar|retomar|conter|exaust/.test(q)) {
-    return pack?.commands || 'Comandos disponíveis:\n• EMERGENCY_STOP — desliga imediatamente (modo Desligado)\n• PAUSE / RESUME — pausa e retoma o ciclo\n• SPEED_UP / SLOW_DOWN — ±10% de velocidade\n• CALIBRATE — recalibra sensores de vibração\n• CYCLE_START — inicia ciclo em modo Automático';
-  }
-  if (/causa|por que|porque|alerta|alarme|problema|status|está/.test(q)) return explainStatus(m, table);
-  return explainStatus(m, table);
+  if (commandRequest) return commands();
+  if (/causa|por que|porque|alerta|alarme|problema|status|está/.test(q)) return pack?.status?.(m) || explainStatus(m, table);
+  return pack?.status?.(m) || explainStatus(m, table);
 }
 
 export function createMockAgent({ snapshotOf, kb, assistant } = {}) {
-  const pack = kb ? { kb, empty: assistant?.empty, commands: assistant?.commands } : null;
+  const pack = kb ? { kb, empty: assistant?.empty, commands: assistant?.commands, summary: assistant?.summary, status: assistant?.status } : null;
   return {
     mode: 'mock',
     label: 'Agente local (mock)',
     intro: assistant?.intro || 'Olá! Sou o assistente da Linha A. Posso explicar como cada máquina funciona, por que um ativo está em alerta, quais parâmetros ajustar e a manutenção recomendada.\nSelecione uma máquina na cena ou pergunte direto.',
-    summaryChip: assistant ? 'Resumo da fazenda' : 'Resumo da planta',
-    placeholder: assistant ? 'Pergunte sobre máquinas, rebanhos ou galpões…' : 'Pergunte sobre o funcionamento das máquinas…',
+    summaryChip: assistant?.summaryChip,
+    placeholder: assistant?.placeholder,
     async send(text, context) {
       await new Promise((r) => setTimeout(r, 450 + Math.random() * 500));
       return { text: answer(text, context, snapshotOf, pack), source: 'Base de conhecimento local · estado ao vivo' };
