@@ -1,4 +1,6 @@
-# Smart Demo: IoT Industrial
+# Smart Demo: Fabric and Foundry 
+
+## Central monitoramento 
 
 Explore cinco cenários 3D interativos para monitoramento de equipamentos, instalações e cadeias operacionais. A demonstração roda localmente com dados simulados; Microsoft Fabric Real-Time Intelligence e Microsoft Foundry são opcionais.
 
@@ -24,7 +26,7 @@ A aplicação inicia em modo de simulação local. Você não precisa de uma con
 
 - Escolha um cenário no menu **Simulação**.
 - Selecione um ativo na lista ou clique nele na cena 3D para ver suas leituras e seu estado.
-- Abra o **Assistente IoT** para perguntar sobre o ativo selecionado e as condições simuladas.
+- Abra o **Assistente IA** para perguntar sobre o ativo selecionado e as condições simuladas.
 - Experimente os controles de parâmetros e comandos. Eles só alteram a simulação, não controlam equipamentos reais.
 
 | Cenário | O que você encontrará |

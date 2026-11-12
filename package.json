@@ -1,9 +1,9 @@
 {
-  "name": "grupo-gps-iot-dash",
+  "name": "smart-demo-fabric-foundry",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "SPA de monitoramento IoT (cena 3D v2) com ajuste de parâmetros, integração Fabric Real-Time Intelligence e assistente Foundry.",
+  "description": "CENTRAL DE MONITORAMENTO (cena 3D v2) com ajuste de parâmetros, integração Fabric Real-Time Intelligence e assistente Foundry.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

@@ -484,4 +484,4 @@ Para compatibilidade com o agente clássico, use `FOUNDRY_AGENT_ID=asst_...` sem
 
 Combine os blocos de configuração do Fabric e Foundry no mesmo `.env`, com `VITE_TELEMETRY_MODE=fabric` e `VITE_AGENT_MODE=foundry`. Inicie SPA e proxy com `npm run dev:all` ou `.\dev.ps1 start`, e o simulador em outro terminal com `npm run simulate:devices`, selecionando `SCENARIO` conforme a tabela inicial. Os dois serviços também podem ser usados separadamente, mantendo o outro modo em `mock`.
 
-Abra <http://localhost:5173>. Confira a telemetria em **Sincronização Fabric RTI** e abra **Assistente IoT** para enviar uma mensagem. Falhas do agente aparecem no chat e no console do proxy.
+Abra <http://localhost:5173>. Confira a telemetria em **Sincronização Fabric RTI** e abra **Assistente IA** para enviar uma mensagem. Falhas do agente aparecem no chat e no console do proxy.

@@ -86,7 +86,7 @@ A SPA oferece cinco cenários alternáveis em tempo de uso — **Smart Factory**
 - **REQ-FUNC-057** — Qualquer comando enviado incrementa o KPI "Comandos enviados", gera uma entrada no log de eventos e é registrado (ack) na fonte de telemetria ativa; falha no envio gera um toast de erro, mas o efeito local permanece registrado.
 - **REQ-FUNC-058** — No proxy, comandos e parâmetros são validados por cenário (o `machineId` precisa pertencer ao catálogo daquele cenário) e por conjunto de comandos conhecidos; a resposta de sucesso é `{ ack: true, delivery: 'local-control' }`, que confirma apenas aceitação em memória — não execução física nem persistência no Fabric; o estado desejado é perdido ao reiniciar o proxy.
 
-## 7. Assistente IoT
+## 7. Assistente IA
 
 - **REQ-FUNC-059** — O botão flutuante "🤖" abre/fecha o painel do assistente; ao abrir pela primeira vez (ou após "Nova conversa"), uma mensagem de saudação é exibida apenas no modo mock.
 - **REQ-FUNC-060** — O contexto exibido no cabeçalho do assistente mostra o ativo atualmente selecionado (id, nome e status) ou o contexto geral apropriado ao cenário (planta, fazenda, estação, mina ou cadeia farmacêutica) quando nada está selecionado.

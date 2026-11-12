@@ -55,7 +55,7 @@ export const energyProfile = {
       '<b>Selecione um dos 40 ativos</b> — painel, inversor, turbina, casa, veículo, circuito ou posto de recarga.',
       '<b>Ajuste parâmetros</b> — use <b>⚙️ Ajustar parâmetros</b>: cada alteração já reflete na cena e nos alertas (pré-visualização). <b>Aplicar</b> sincroniza com o dispositivo.',
       '<b>Envie um comando</b> — escolha a ação e confirme em <b>Enviar</b>; o efeito aparece imediatamente.',
-      '<b>Tire dúvidas</b> — o <b>Assistente IoT</b> (botão 🤖) explica alarmes e o funcionamento de cada ativo.',
+      '<b>Tire dúvidas</b> — o <b>Assistente IA</b> (botão 🤖) explica alarmes e o funcionamento de cada ativo.',
     ],
     procTitle: 'Procedimento em caso de alerta',
     proc: [

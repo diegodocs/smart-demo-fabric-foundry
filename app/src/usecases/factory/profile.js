@@ -56,7 +56,7 @@ export const factoryProfile = {
       '<b>Selecione um ativo</b> — clique na máquina (cena 3D ou lista acima) para abrir as métricas ao vivo.',
       '<b>Ajuste parâmetros</b> — use <b>⚙️ Ajustar parâmetros</b>: cada alteração já reflete na cena e nos alertas (pré-visualização). <b>Aplicar</b> sincroniza com o dispositivo.',
       '<b>Envie um comando</b> — escolha a ação e confirme em <b>Enviar</b>; o efeito aparece imediatamente.',
-      '<b>Tire dúvidas</b> — o <b>Assistente IoT</b> (botão 🤖) explica alarmes e o funcionamento de cada máquina.',
+      '<b>Tire dúvidas</b> — o <b>Assistente IA</b> (botão 🤖) explica alarmes e o funcionamento de cada máquina.',
     ],
     procTitle: 'Procedimento em caso de alerta',
     proc: [
