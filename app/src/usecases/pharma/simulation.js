@@ -1,6 +1,7 @@
 import { effectiveSpeed, telemetrySnapshot } from '../../domain/simulation.js';
+import { evaluate } from '../../domain/rules.js';
 import { PHARMA_ASSET_DEFINITIONS, pharmaId } from './catalog.js';
-import { pharmaDock, pharmaRoute } from './layout.js';
+import { PHARMA_LAYOUT, PHARMA_TRUCK_DISTANCE_PER_CYCLE, pharmaDock, pharmaRoute } from './layout.js';
 
 const BATCH_SIZE = 100;
 const EPS = 1e-9;
@@ -8,11 +9,12 @@ const DOCK_SECONDS = 2;
 const active = (asset) => !asset.commLost && effectiveSpeed(asset) > 0;
 const safe = (asset) => !asset.cold || (Number.isFinite(asset.temp) && asset.temp >= 2 && asset.temp <= 8);
 
-export function createPharmaSimulation(devices) {
+export function createPharmaSimulation(devices, random = Math.random) {
   const byId = Object.fromEntries(devices.map((asset) => [asset.id, asset]));
   const expected = PHARMA_ASSET_DEFINITIONS.map((definition) => pharmaId(definition.code, definition.number));
-  if (expected.some((id) => !byId[id]) || new Set(devices.map((asset) => asset.id)).size !== devices.length) {
-    throw new Error('O catálogo farmacêutico está incompleto ou contém IDs duplicados.');
+  if (devices.length !== expected.length || expected.some((id) => !byId[id])
+    || new Set(devices.map((asset) => asset.id)).size !== devices.length) {
+    throw new Error('O catálogo farmacêutico está incompleto ou contém IDs duplicados ou desconhecidos.');
   }
   const factory = ['REC', 'PRD', 'QUA', 'EMB', 'ARM'].map((code) => byId[pharmaId(code)]);
   const trucks = devices.filter((asset) => asset.type === 'pharma-truck');
@@ -24,6 +26,7 @@ export function createPharmaSimulation(devices) {
   const repositioning = new Map();
   const origins = [factory[4], ...centers];
   let serial = 0, arrival = 0, originCursor = 0, centerCursor = 0, pharmacyCursor = 0, truckCursor = 0;
+  let stepped = false;
   const queue = (asset) => queues.get(asset.id);
   const eligible = (asset) => active(asset) && safe(asset);
   const room = (asset) => (queue(asset).length + (reserved.get(asset.id) || 0)) * BATCH_SIZE + BATCH_SIZE <= asset.capacityUnits;
@@ -37,7 +40,7 @@ export function createPharmaSimulation(devices) {
   }
 
   function move(truck, trip, dt) {
-    let remaining = 80 / truck.params.cycleTime * dt * effectiveSpeed(truck) / 100;
+    let remaining = PHARMA_TRUCK_DISTANCE_PER_CYCLE / truck.params.cycleTime * dt * effectiveSpeed(truck) / 100;
     let distance = 0;
     while (remaining > EPS && trip.point < trip.points.length) {
       const target = trip.points[trip.point];
@@ -57,8 +60,15 @@ export function createPharmaSimulation(devices) {
     return trip.point >= trip.points.length;
   }
 
-  function route(truck, target) {
-    return pharmaRoute({ x: truck.positionX, z: truck.positionZ }, pharmaDock(target));
+  function route(truck, target, roadZ) {
+    return pharmaRoute({ x: truck.positionX, z: truck.positionZ }, pharmaDock(target), roadZ);
+  }
+
+  function nextRepositionTarget(current) {
+    const value = random();
+    if (!Number.isFinite(value) || value < 0 || value >= 1) throw new Error('Valor aleatório de deslocamento inválido.');
+    const offset = 1 + Math.floor(value * (origins.length - 1));
+    return origins[(origins.indexOf(current) + offset) % origins.length];
   }
 
   function chooseDestination(origin) {
@@ -191,7 +201,7 @@ export function createPharmaSimulation(devices) {
         }
         truck.vehicleState = 'returning';
         if (move(truck, reposition, dt)) {
-          reposition.target = origins[(origins.indexOf(reposition.target) + 1) % origins.length];
+          reposition.target = nextRepositionTarget(reposition.target);
           reposition.points = route(truck, reposition.target);
           reposition.point = 1;
         }
@@ -215,7 +225,9 @@ export function createPharmaSimulation(devices) {
           trip.lot.elapsed = 0;
           queue(truck).push(trip.lot);
           trip.phase = 'delivering';
-          trip.points = route(truck, trip.destination);
+          const roadZ = trip.origin.type === 'pharma-distribution' && trip.destination.type === 'pharma-pharmacy'
+            ? PHARMA_LAYOUT.cityRoadZ : PHARMA_LAYOUT.roadZ;
+          trip.points = route(truck, trip.destination, roadZ);
           trip.point = 1;
           trip.elapsed = 0;
         }
@@ -246,13 +258,22 @@ export function createPharmaSimulation(devices) {
   function snapshot() {
     return devices.map((asset) => {
       const reading = telemetrySnapshot(asset);
-      return reading ? { ...reading, isRunning: active(asset) && asset.isRunning } : null;
+      if (!reading) return null;
+      const stoppedTruck = asset.type === 'pharma-truck' && (!active(asset) || !safe(asset));
+      return {
+        ...reading, status: evaluate(asset).status, isRunning: !stoppedTruck && active(asset) && asset.isRunning,
+        ...(stoppedTruck ? { speedKmh: 0, vehicleState: 'stopped' }
+          : !stepped && asset.type === 'pharma-truck' && asset.isRunning
+            ? { speedKmh: PHARMA_TRUCK_DISTANCE_PER_CYCLE / asset.params.cycleTime * effectiveSpeed(asset) / 100 * 3.6 }
+            : {}),
+      };
     }).filter(Boolean);
   }
   return {
     snapshot,
     step(dt) {
       if (!Number.isFinite(dt) || dt < 0 || dt > 3600) throw new Error('Intervalo de simulação inválido (0..3600 s).');
+      if (dt > 0) stepped = true;
       for (let remaining = dt; remaining > EPS; remaining -= Math.min(remaining, 0.1)) calculate(Math.min(remaining, 0.1));
       return snapshot();
     },

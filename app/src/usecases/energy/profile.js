@@ -7,7 +7,7 @@ const fmt = (n, d = 0) => Number(n).toLocaleString('pt-BR', { minimumFractionDig
 export const energyProfile = {
   id: 'energy',
   forceMock: false,
-  documentTitle: 'Smart Energy — Central de Monitoramento IoT',
+  documentTitle: 'Smart Energy — Central de Monitoramento',
   plant: 'Estação de Energia Vale do Rio Verde · Solar + Hidrelétrica + Recarga',
   operator: { login: 'c.andrade', name: 'Camila Andrade', avatar: 'CA', meta: 'Matrícula 30512 · Engenheira de operação' },
   initialKpis: { commands: 4, paramChanges: 0, unplanned: 1 },
@@ -46,7 +46,7 @@ export const energyProfile = {
   },
   chrome: {
     wordmark: 'Smart <b>Energy</b>',
-    title: 'Central de Monitoramento IoT — Estação de Energia',
+    title: 'Central de Monitoramento — Estação de Energia',
     subtitle: 'Estação de Energia Vale do Rio Verde · Solar + Hidrelétrica + Recarga',
     hud: '⚡ Smart Energy <small>SPA · reativa · Fabric RTI</small>',
     assetsTitle: 'Ativos da estação',

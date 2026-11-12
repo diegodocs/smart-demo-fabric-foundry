@@ -102,7 +102,7 @@ async function pollOnce(sc) {
     if (r.ingestedAt) lags.push(Math.max(0, new Date(r.ingestedAt).getTime() - ts));
     return stale
       ? { machineId: r.machineId, ts: r.ts, commLost: true }
-      : { machineId: r.machineId, ts: r.ts, temp: r.temp, vib: r.vib, usage: r.usage, mode: r.mode, speed: r.speed, isRunning: r.isRunning, ...extraTelemetry(r), commLost: false };
+      : { machineId: r.machineId, ts: r.ts, temp: r.temp, vib: r.vib, usage: r.usage, mode: r.mode, speed: r.speed, isRunning: r.isRunning, status: r.status, ...extraTelemetry(r), commLost: false };
   });
   // máquinas sem nenhuma leitura recente = perda de comunicação
   sc.knownIds.forEach((id) => { if (!seen.has(id)) items.push({ machineId: id, commLost: true }); });

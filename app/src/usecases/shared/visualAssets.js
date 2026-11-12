@@ -193,7 +193,7 @@ export async function loadVisualAssets({ textures = {}, models = {} }, loaders =
     }
     for (const [name, definition] of Object.entries(models)) {
       const source = modelRoots[name];
-      const prepared = prepareStaticModel(source, definition.length);
+      const prepared = (definition.prepare || prepareStaticModel)(source, definition.length);
       roots[roots.indexOf(source)] = prepared;
       modelRoots[name] = prepared;
     }

@@ -37,7 +37,7 @@ const $ = (selector) => {
 };
 const subscribers = [];
 const store = {
-  state: { machines: [], byId: {}, selectedId: null, scenario: 'factory', kpis: {} },
+  state: { machines: [], byId: {}, selectedId: null, scenario: 'factory', kpis: {}, connection: {} },
   subscribe(_topics, callback) { subscribers.push(callback); },
 };
 const selectMachine = (id) => {
@@ -72,7 +72,14 @@ const factory = {
   envBadge: () => 'mock',
   bootScene: () => factoryBoot(),
 };
-const profiles = { farm, factory };
+const pharma = {
+  id: 'pharma', forceMock: false, initialKpis: { commands: 0 },
+  createAssets: () => [{ id: 'PHA-REC-001', params: { mode: 'auto' }, commLost: false }],
+  envBadge: (telemetry) => telemetry,
+  bootScene: () => ({ select() {}, dispose() {} }),
+};
+const profiles = { farm, factory, pharma };
+let savedMode = 'fabric';
 let active = factory;
 
 mock.module('../app/src/ui/dom.js', {
@@ -87,7 +94,7 @@ mock.module('../app/src/core/state.js', {
     closeEditor() {},
     attachTelemetrySource() {},
     applyTelemetry() {},
-    setConnection() {},
+    setConnection(patch) { Object.assign(store.state.connection, patch); },
     resetScenario(machines, kpis, meta) {
       resets++;
       Object.assign(store.state, {
@@ -99,6 +106,8 @@ mock.module('../app/src/core/state.js', {
 });
 mock.module('../app/src/integration/telemetry/index.js', {
   exports: {
+    readTelemetryMode: (_scenario, fallback) => savedMode || fallback,
+    saveTelemetryMode: (_scenario, mode) => { savedMode = mode; },
     createTelemetrySource(mode) {
       const source = {
         mode, starts: 0, stops: 0,
@@ -216,4 +225,27 @@ test('scene recovery preserves telemetry, state and selection; switching still r
   assert.equal(resets, 2);
   assert.equal(factorySelection, 'CNC-001');
   assert.equal(container.children.some((child) => child.className === 'scene-error'), false);
+
+  await window.iot.activate('pharma');
+  assert.equal(window.iot.source.mode, 'fabric');
+  assert.equal(store.state.machines[0].commLost, true);
+  assert.equal($('#telemetry-choice').hidden, false);
+  const fabricSource = window.iot.source;
+  const telemetrySelect = $('#telemetry-select');
+  telemetrySelect.value = 'mock';
+  await telemetrySelect.listeners.change({ target: telemetrySelect });
+  assert.equal(fabricSource.stops, 1);
+  assert.equal(window.iot.source.mode, 'mock');
+  assert.equal(savedMode, 'mock');
+  assert.equal(store.state.machines[0].commLost, false);
+  assert.equal($('#env-badge').textContent, 'mock');
+
+  await window.iot.activate('factory');
+  assert.equal($('#telemetry-choice').hidden, true);
+  await window.iot.activate('pharma');
+  assert.equal(window.iot.source.mode, 'mock');
+  telemetrySelect.value = 'fabric';
+  await telemetrySelect.listeners.change({ target: telemetrySelect });
+  assert.equal(window.iot.source.mode, 'fabric');
+  assert.equal(store.state.machines[0].commLost, true);
 });

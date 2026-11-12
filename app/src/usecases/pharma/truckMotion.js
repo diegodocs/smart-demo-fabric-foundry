@@ -1,4 +1,4 @@
-import { pharmaRoute } from './layout.js';
+import { PHARMA_LAYOUT, pharmaRoute } from './layout.js';
 
 function positionAlong(points, distance) {
   for (let index = 1; index < points.length; index++) {
@@ -55,7 +55,9 @@ export function updateTruckMotion(motion, reading, now) {
     const start = { x: motion.x, z: motion.z };
     const end = { x: reading.positionX, z: reading.positionZ };
     const diagonal = Math.abs(start.x - end.x) > 1e-6 && Math.abs(start.z - end.z) > 1e-6;
-    const points = diagonal ? pharmaRoute(start, end) : [start, end];
+    const highway = [start, end].some((point) => Math.abs(point.z - PHARMA_LAYOUT.roadZ) < 1e-6);
+    const cityStreet = !highway && [start, end].some((point) => Math.abs(point.z - PHARMA_LAYOUT.cityRoadZ) < 1e-6);
+    const points = diagonal ? pharmaRoute(start, end, cityStreet ? PHARMA_LAYOUT.cityRoadZ : PHARMA_LAYOUT.roadZ) : [start, end];
     const length = points.slice(1).reduce((sum, point, index) =>
       sum + Math.hypot(point.x - points[index].x, point.z - points[index].z), 0);
     const interval = reading.lastSeen - motion.sampleTime;

@@ -1,30 +1,33 @@
+export const PHARMA_TRUCK_DISTANCE_PER_CYCLE = 80;
+
 export const PHARMA_LAYOUT = {
   factory: {
-    REC: [-100, 0, -36],
-    PRD: [-82, 0, -36],
-    QUA: [-64, 0, -36],
-    EMB: [-100, 0, -16],
-    ARM: [-82, 0, -16],
+    REC: [-108, 0, -32],
+    PRD: [-90, 0, -32],
+    QUA: [-72, 0, -32],
+    EMB: [-54, 0, -32],
+    ARM: [-36, 0, -32],
   },
-  centers: [[-48, 0, -5], [62, 0, -5]],
-  pharmacies: [[-22, 0, -5], [0, 0, -5], [22, 0, -5]],
+  centers: [[-12, 0, -5]],
+  pharmacies: [[18, 0, -5], [48, 0, -5]],
   houses: [
-    { x: -29, z: -31 }, { x: -10, z: -31 }, { x: 12, z: -31 }, { x: 34, z: -31 },
-    { x: -29, z: -44 }, { x: -8, z: -44 }, { x: 30, z: -44 }, { x: 42, z: -24, scale: 0.85 },
+    { x: 10, z: -34 }, { x: 23, z: -34 }, { x: 36, z: -34 },
+    { x: 49, z: -34 }, { x: 62, z: -34 },
   ],
-  truckStarts: [[-106, 0, 29], [-100, 0, 29], [-94, 0, 29], [-88, 0, 29], [-82, 0, 29]],
+  truckStarts: [[-106, 0, 29], [-100, 0, 29], [-94, 0, 29]],
   roadZ: 20,
+  cityRoadZ: 14,
 };
 
 export function pharmaDock(asset) {
   return { x: asset.pos[0], z: asset.pos[2] + 10 };
 }
 
-export function pharmaRoute(from, to) {
+export function pharmaRoute(from, to, roadZ = PHARMA_LAYOUT.roadZ) {
   const points = [
     { x: from.x, z: from.z },
-    { x: from.x, z: PHARMA_LAYOUT.roadZ },
-    { x: to.x, z: PHARMA_LAYOUT.roadZ },
+    { x: from.x, z: roadZ },
+    { x: to.x, z: roadZ },
     { x: to.x, z: to.z },
   ];
   return points.filter((point, index) => !index

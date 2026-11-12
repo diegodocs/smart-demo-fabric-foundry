@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import {
   batchStaticMeshes, disposeVisualResources, loadVisualAssets, prepareStaticModel,
 } from '../app/src/usecases/shared/visualAssets.js';
+import { prepareEnergyVehicle } from '../app/src/usecases/energy/models.js';
 import { trackSceneHover } from '../app/src/usecases/shared/sceneHover.js';
 
 function tracked(resource) {
@@ -140,6 +141,37 @@ test('local visual assets configure PBR textures and release models and textures
   assert.equal(mapDisposed(), 1);
   assert.equal(normalDisposed(), 1);
   assert.equal(materialDisposed(), 1);
+});
+
+test('vehicle preparation preserves animated wheels and releases shared clone resources', async () => {
+  const root = new THREE.Group();
+  const material = new THREE.MeshStandardMaterial();
+  const bodyGeometry = new THREE.BoxGeometry(3, 1, 1);
+  const wheelGeometry = new THREE.CylinderGeometry(0.3, 0.3, 0.2, 8);
+  const body = new THREE.Mesh(bodyGeometry, material);
+  body.position.y = 0.8;
+  const wheel = new THREE.Group();
+  wheel.name = 'WheelFrontL';
+  wheel.position.set(1, 0.3, 0.5);
+  wheel.add(new THREE.Mesh(wheelGeometry, material));
+  root.add(body, wheel);
+  const bodyDisposed = tracked(bodyGeometry), wheelDisposed = tracked(wheelGeometry), materialDisposed = tracked(material);
+  const assets = await loadVisualAssets({
+    models: { car: { path: 'assets/energy/car.glb', length: 3.2, prepare: prepareEnergyVehicle } },
+  }, { modelLoader: { async loadAsync() { return { scene: root }; } } });
+  const car = assets.models.car;
+  const copy = car.clone(true);
+  const pivot = copy.getObjectByName('energy-wheel');
+  assert.ok(pivot && pivot.userData.radius > 0);
+  const preparedWheelDisposed = tracked(pivot.children[0].geometry);
+  assert.ok(Math.abs(new THREE.Box3().setFromObject(copy).min.y) < 1e-6);
+  assert.equal(bodyDisposed(), 1);
+  assert.equal(wheelDisposed(), 1);
+  const scene = new THREE.Scene();
+  scene.add(copy);
+  assets.dispose(scene);
+  assert.equal(materialDisposed(), 1);
+  assert.equal(preparedWheelDisposed(), 1);
 });
 
 test('failed local asset loads report the failing path and release successful loads', async () => {

@@ -69,6 +69,10 @@ function prepare(source, targetLength, vehicle = false) {
   return content;
 }
 
+export function prepareEnergyVehicle(source, targetLength) {
+  return prepare(source, targetLength, true);
+}
+
 export async function loadEnergyModels() {
   const BASE = `${import.meta.env.BASE_URL}assets/energy/`;
   const loader = new GLTFLoader();
@@ -101,7 +105,7 @@ export async function loadEnergyModels() {
     throw new Error(`Falha ao carregar os modelos/texturas locais da Smart Energy: ${failure.reason.message}`);
   }
   const values = resources.map((r) => r.value);
-  const templates = [prepare(values[0].scene, 3.8), prepare(values[1].scene, 2.8, true), prepare(values[2].scene, 4.5, true)];
+  const templates = [prepare(values[0].scene, 3.8), prepareEnergyVehicle(values[1].scene, 2.8), prepareEnergyVehicle(values[2].scene, 4.5)];
   roots.splice(0, 3, ...templates);
   const textures = {};
   ['grass', 'asphalt', 'concrete'].forEach((name, n) => {

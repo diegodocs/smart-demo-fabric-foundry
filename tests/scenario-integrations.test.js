@@ -116,6 +116,13 @@ for (const profile of profiles) {
       applyTelemetry([{ machineId: 'MIN-SIL-001', commLost: true }]);
       assert.equal(profile.kpiRows(store.state).find((row) => row.label === 'Produto nos silos').value, '—');
     }
+    if (profile.id === 'pharma') {
+      assert.equal(received.status, 'online');
+      assert.equal(received.isRunning, false);
+      assert.equal(store.state.byId[native.machineId].status, received.status);
+      assert.equal(items.find((reading) => reading.machineId === assets.at(-2).id).status, undefined);
+      assert.equal(items.find((reading) => reading.machineId === assets.at(-1).id).status, undefined);
+    }
   });
 
   test(`${profile.id}: Foundry receives scenario and live asset context via the HTTP proxy`, async (t) => {
@@ -152,6 +159,20 @@ for (const profile of profiles) {
     assert.deepEqual(requests[3], {});
   });
 }
+
+test('pharma ignores Fabric readings for removed assets', async () => {
+  const removed = ['PHA-TRK-004', 'PHA-TRK-005', 'PHA-DIS-002', 'PHA-FAR-003'];
+  const originalLength = rows.length;
+  const template = rows.find((reading) => reading.machineId === 'PHA-TRK-001');
+  rows.push(...removed.map((machineId) => ({ ...template, machineId, ts: new Date().toISOString() })));
+  try {
+    const items = await sample('pharma');
+    assert.equal(items.length, 11);
+    assert.ok(items.every((reading) => !removed.includes(reading.machineId)));
+  } finally {
+    rows.length = originalLength;
+  }
+});
 
 test('farm KPIs do not treat disconnected seed values as live measurements', () => {
   const machines = DEVICE_CATALOGS.farm.createAssets();

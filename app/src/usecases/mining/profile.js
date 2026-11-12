@@ -8,7 +8,7 @@ const fmt = (value, digits = 1) => Number(value).toLocaleString('pt-BR', {
 export const miningProfile = {
   id: 'mining',
   forceMock: false,
-  documentTitle: 'Smart Mining — Central de Monitoramento IoT',
+  documentTitle: 'Smart Mining — Central de Monitoramento',
   plant: 'Mina Serra Clara · Extração, beneficiamento e entrega',
   operator: { login: 'r.costa', name: 'Rafaela Costa', avatar: 'RC', meta: 'Matrícula 41032 · Gestão de operações' },
   initialKpis: { pieces: 0, commands: 0, paramChanges: 0, unplanned: 0 },
@@ -47,7 +47,7 @@ export const miningProfile = {
   },
   chrome: {
     wordmark: 'Smart <b>Mining</b>',
-    title: 'Central de Monitoramento IoT — Smart Mining',
+    title: 'Central de Monitoramento — Smart Mining',
     subtitle: 'Mina Serra Clara · 4 caminhões de mina · 3 britagens · 6 silos · 3 centros de distribuição',
     hud: '⛏️ Smart Mining <small>extração · beneficiamento · entrega</small>',
     assetsTitle: 'Ativos da mineração',

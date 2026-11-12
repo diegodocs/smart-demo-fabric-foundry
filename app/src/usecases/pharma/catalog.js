@@ -1,5 +1,5 @@
 import { MODE_FIELD } from '../../domain/paramSchema.js';
-import { PHARMA_LAYOUT } from './layout.js';
+import { PHARMA_LAYOUT, PHARMA_TRUCK_DISTANCE_PER_CYCLE } from './layout.js';
 
 export const PHARMA_STAGES = [
   { code: 'REC', name: 'Recebimento de matéria-prima', type: 'pharma-receiving', pos: PHARMA_LAYOUT.factory.REC, cycle: 6 },
@@ -19,7 +19,6 @@ export const PHARMA_ASSET_DEFINITIONS = [
     code: 'TRK', number: index + 2, name: `Caminhão refrigerado ${index + 2}`,
     type: 'pharma-truck', pos, cycle: 12, cold: true,
   })),
-  { code: 'DIS', number: 2, name: 'Centro de distribuição 2', type: 'pharma-distribution', pos: PHARMA_LAYOUT.centers[1], cycle: 6, cold: true },
   ...PHARMA_LAYOUT.pharmacies.slice(1).map((pos, index) => ({
     code: 'FAR', number: index + 2, name: `Farmácia ${index + 2}`,
     type: 'pharma-pharmacy', pos, cycle: 5, cold: true,
@@ -51,7 +50,7 @@ export const PHARMA_COMMANDS = [
 
 export function createPharmaAssets() {
   return PHARMA_ASSET_DEFINITIONS.map((stage) => {
-    const offline = stage.code === 'TRK' && stage.number > 2;
+    const moving = stage.code === 'TRK' && (stage.number ?? 1) <= 2;
     const defaults = {
       mode: 'auto', speed: 100, targetTemp: stage.cold ? 5 : 22,
       tempLimit: stage.cold ? 8 : 35, vibLimit: 1.5, cycleTime: stage.cycle,
@@ -68,13 +67,14 @@ export function createPharmaAssets() {
         { key: 'temp', label: 'Temperatura', unit: '°C', digits: 1, limit: 'tempLimit', minLimit: stage.cold ? 'tempMin' : undefined },
         { key: 'quarantinedUnits', label: 'Unidades bloqueadas', unit: 'un', scale: 500 },
       ],
-      params: { ...defaults }, defaults,
+      params: { ...defaults, ...(stage.code === 'TRK' && !moving ? { speed: 0 } : {}) }, defaults,
       base: { temp: defaults.targetTemp, vib: 0.2, usage: 50 },
       temp: defaults.targetTemp, vib: 0.2, usage: 0, speedMax: 130,
-      isRunning: false, commLost: offline, status: offline ? 'offline' : 'online', reasons: [], lastSeen: Date.now(),
+      isRunning: moving, commLost: false, status: 'online', reasons: [], lastSeen: Date.now(),
       ...(stage.code === 'TRK' ? {
         positionX: stage.pos[0], positionZ: stage.pos[2],
-        heading: 0, vehicleState: 'stopped', speedKmh: 0,
+        heading: moving ? Math.PI : 0, vehicleState: moving ? 'returning' : 'stopped',
+        speedKmh: moving ? PHARMA_TRUCK_DISTANCE_PER_CYCLE / defaults.cycleTime * 3.6 : 0,
       } : {}),
     };
   });

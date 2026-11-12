@@ -203,6 +203,12 @@ for (const scenario of ['farm', 'mining', 'pharma']) {
         assert.equal(reading.inventoryUnits, 0);
         assert.equal(reading.batchId, '');
         assert.equal(items.find((item) => item.machineId === 'PHA-TRK-001').temp, 5);
+        assert.ok(items.every((item) => item.commLost === false));
+        for (const id of ['PHA-TRK-003']) {
+          const truck = items.find((item) => item.machineId === id);
+          assert.equal(truck.isRunning, false);
+          assert.equal(truck.speedKmh, 0);
+        }
       }
     } finally {
       clearTimeout(timeout);
@@ -254,9 +260,9 @@ test('every added mining asset accepts scenario-isolated parameters and commands
   }
 });
 
-test('every added pharma asset accepts scenario-isolated parameters and commands', async () => {
+test('remaining added pharma assets accept scenario-isolated parameters and commands', async () => {
   const devices = DEVICE_CATALOGS.pharma.createAssets().slice(8);
-  assert.equal(devices.length, 7);
+  assert.equal(devices.length, 3);
   for (const device of devices) {
     assert.equal((await post('/api/params', {
       scenario: 'pharma', machineId: device.id, params: { ...device.params, speed: 80 },
@@ -266,7 +272,7 @@ test('every added pharma asset accepts scenario-isolated parameters and commands
     })).status, 200);
   }
   const control = await (await fetch(`${base}/api/devices/control?scenario=pharma`)).json();
-  assert.equal(control.items.length, 15);
+  assert.equal(control.items.length, 11);
   for (const device of devices) {
     const item = control.items.find((reading) => reading.machineId === device.id);
     assert.equal(item.params.mode, 'paused');
@@ -274,5 +280,16 @@ test('every added pharma asset accepts scenario-isolated parameters and commands
     assert.equal((await post('/api/commands', {
       scenario: 'mining', machineId: device.id, command: 'RESUME',
     })).status, 400);
+  }
+});
+
+test('removed pharma assets are absent from controls and reject commands and parameters', async () => {
+  const removed = ['PHA-TRK-004', 'PHA-TRK-005', 'PHA-DIS-002', 'PHA-FAR-003'];
+  const control = await (await fetch(`${base}/api/devices/control?scenario=pharma`)).json();
+  const params = DEVICE_CATALOGS.pharma.createAssets()[0].params;
+  for (const machineId of removed) {
+    assert.ok(!control.items.some((item) => item.machineId === machineId));
+    assert.equal((await post('/api/commands', { scenario: 'pharma', machineId, command: 'PAUSE' })).status, 400);
+    assert.equal((await post('/api/params', { scenario: 'pharma', machineId, params })).status, 400);
   }
 });

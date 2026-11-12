@@ -1,14 +1,23 @@
 import { hasVehicleClearance, loop, routePose } from '../../domain/routes.js';
+import { PHARMA_LAYOUT } from './layout.js';
 
 export const CITY_ROADS = {
-  left: -38, shortcut: 11, right: 51, north: -17, south: 14, width: 6, radius: 4,
+  left: 4, shortcut: 32, right: 68, north: -17, south: PHARMA_LAYOUT.cityRoadZ, width: 6, radius: 4,
 };
 export const CITY_TRAFFIC_ROUTES = [
   loop(CITY_ROADS.left, CITY_ROADS.north, CITY_ROADS.shortcut, CITY_ROADS.south, CITY_ROADS.radius, 0),
   loop(CITY_ROADS.left, CITY_ROADS.north, CITY_ROADS.right, CITY_ROADS.south, CITY_ROADS.radius, 0),
 ];
-export const CITY_TRAFFIC_COUNT = 5;
+export const CITY_TRAFFIC_COUNT = 3;
 export const CITY_CAR_RADIUS = 1.9;
+const JUNCTION_DISTANCE = CITY_ROADS.shortcut - CITY_ROADS.radius - CITY_ROADS.left - CITY_ROADS.radius;
+const SHORT_MERGE_DISTANCE = CITY_TRAFFIC_ROUTES[0].segments.slice(0, 4)
+  .reduce((distance, segment) => distance + segment.length, 0);
+const MERGE_DISTANCES = [SHORT_MERGE_DISTANCE, SHORT_MERGE_DISTANCE + 2 * (CITY_ROADS.right - CITY_ROADS.shortcut)];
+// Reserve the shared merge so cars approaching from both loops cannot block each other.
+const MERGE_CLEARANCE = 12;
+
+const inMerge = (routeIndex, distance) => Math.abs(distance - MERGE_DISTANCES[routeIndex]) < MERGE_CLEARANCE;
 
 export function cityTruckObstacles(trucks) {
   return trucks.flatMap(({ x, z, heading }) => [-4, -2, 0, 2, 4].map((offset) => ({
@@ -31,6 +40,7 @@ export function createCityTraffic(obstacles = [], random = Math.random) {
       const route = CITY_TRAFFIC_ROUTES[routeIndex];
       const distance = random() * route.length;
       const pose = routePose(route, distance);
+      if (inMerge(routeIndex, distance) && cars.some((other) => inMerge(other.routeIndex, other.distance))) continue;
       if (!hasVehicleClearance(pose, CITY_CAR_RADIUS, [
         ...obstacles, ...cars.map((other) => ({ ...other, radius: CITY_CAR_RADIUS })),
       ])) continue;
@@ -38,7 +48,7 @@ export function createCityTraffic(obstacles = [], random = Math.random) {
       car = { routeIndex, distance, ...pose, speed, targetSpeed: speed, changeIn: nextChange(random), travelled: 0 };
       break;
     }
-    if (!car) throw new Error('Não foi possível posicionar os cinco carros da Smart City sem sobreposição.');
+    if (!car) throw new Error('Não foi possível posicionar os três carros da Smart City sem sobreposição.');
     cars.push(car);
   }
   return cars;
@@ -58,9 +68,18 @@ export function stepCityTraffic(cars, dt, obstacles = [], random = Math.random) 
     let routeIndex = car.routeIndex;
     let nextDistance = car.distance + distance;
     const previousRoute = CITY_TRAFFIC_ROUTES[routeIndex];
+    const crossingJunction = car.distance < JUNCTION_DISTANCE && nextDistance >= JUNCTION_DISTANCE;
+    if (crossingJunction) {
+      car.pendingRoute ??= chooseRoute(random);
+      routeIndex = car.pendingRoute;
+    }
     if (nextDistance >= previousRoute.length) {
       nextDistance -= previousRoute.length;
-      routeIndex = chooseRoute(random);
+    }
+    if (!inMerge(car.routeIndex, car.distance) && inMerge(routeIndex, nextDistance)
+      && cars.some((other) => other !== car && inMerge(other.routeIndex, other.distance))) {
+      car.speed = 0;
+      continue;
     }
     const pose = routePose(CITY_TRAFFIC_ROUTES[routeIndex], nextDistance);
     const otherCars = cars.filter((other) => other !== car)
@@ -70,5 +89,6 @@ export function stepCityTraffic(cars, dt, obstacles = [], random = Math.random) 
       continue;
     }
     Object.assign(car, pose, { routeIndex, distance: nextDistance, speed, travelled: distance });
+    if (crossingJunction) delete car.pendingRoute;
   }
 }

@@ -4,10 +4,12 @@ import { CSS2DObject, CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { VEHICLE_STATE_LABELS } from '../../domain/telemetry.js';
 import { setText } from '../../ui/dom.js';
+import { prepareEnergyVehicle } from '../energy/models.js';
 import { batchStaticMeshes, loadVisualAssets } from '../shared/visualAssets.js';
 import { trackSceneHover } from '../shared/sceneHover.js';
 import { CITY_ROADS, cityTruckObstacles, createCityTraffic, stepCityTraffic } from './cityTraffic.js';
-import { PHARMA_LAYOUT, pharmaDock } from './layout.js';
+import { PHARMA_LAYOUT, pharmaDock, pharmaRoute } from './layout.js';
+import { startPharmaRenderLoop, updatePharmaControls } from './renderLoop.js';
 import { createTruckMotion, updateTruckMotion } from './truckMotion.js';
 
 const COLORS = { online: 0x299e80, alert: 0xe9a528, offline: 0xdf5959 };
@@ -18,7 +20,7 @@ const ZONE_SURFACES = {
   'pharma-packaging': 0xecdccc,
   'pharma-storage': 0xcde3e9,
   'pharma-distribution': 0xd8e5d9,
-  'pharma-pharmacy': 0xe8def0,
+  'pharma-pharmacy': 0xe0eee4,
 };
 const ZONE_ACCENTS = {
   'pharma-receiving': 0xc49352,
@@ -27,7 +29,7 @@ const ZONE_ACCENTS = {
   'pharma-packaging': 0xc57949,
   'pharma-storage': 0x4a7db0,
   'pharma-distribution': 0x578c73,
-  'pharma-pharmacy': 0x8065a2,
+  'pharma-pharmacy': 0x167b59,
 };
 
 export async function initPharmaScene(container, assets, { onPick } = {}) {
@@ -35,6 +37,10 @@ export async function initPharmaScene(container, assets, { onPick } = {}) {
     textures: {
       concrete: { path: 'assets/energy/concrete', repeat: [8, 6] },
       grass: { path: 'assets/energy/grass', repeat: [10, 8] },
+    },
+    models: {
+      car: { path: 'assets/energy/car.glb', length: 3.2, prepare: prepareEnergyVehicle },
+      truck: { path: 'assets/energy/truck.glb', length: 9, prepare: prepareEnergyVehicle },
     },
   });
   const scene = new THREE.Scene();
@@ -52,13 +58,13 @@ export async function initPharmaScene(container, assets, { onPick } = {}) {
     container.appendChild(renderer.domElement);
 
     const camera = new THREE.PerspectiveCamera(42, container.clientWidth / container.clientHeight, 0.1, 500);
-    const fitDistance = () => (camera.aspect < 1 ? 115 : 84)
+    const fitDistance = () => (camera.aspect < 1 ? 115 : 100)
       / Math.sin(Math.min(THREE.MathUtils.degToRad(21), Math.atan(Math.tan(THREE.MathUtils.degToRad(21)) * camera.aspect)));
     let fit = fitDistance();
     camera.far = Math.max(500, fit * 3);
     camera.updateProjectionMatrix();
     const sceneCenter = new THREE.Vector3(-22, 0, -4);
-    camera.position.copy(new THREE.Vector3(0.35, 0.8, 1).normalize().multiplyScalar(fit)).add(sceneCenter);
+    camera.position.copy(new THREE.Vector3(0.08, 1.15, 1).normalize().multiplyScalar(fit)).add(sceneCenter);
     const controls = new OrbitControls(camera, renderer.domElement);
     releases.push(() => controls.dispose());
     controls.enableDamping = true;
@@ -66,7 +72,6 @@ export async function initPharmaScene(container, assets, { onPick } = {}) {
     controls.minDistance = 10;
     controls.maxDistance = Math.max(400, fit * 1.3);
     controls.maxPolarAngle = Math.PI / 2.1;
-    controls.autoRotateSpeed = 0.2;
 
     const labels = new CSS2DRenderer();
     labels.setSize(container.clientWidth, container.clientHeight);
@@ -100,6 +105,10 @@ export async function initPharmaScene(container, assets, { onPick } = {}) {
     const ground = new THREE.MeshStandardMaterial({ color: 0xcedbd9, ...visuals.textures.concrete });
     const grass = new THREE.MeshStandardMaterial({ color: 0x9ab998, ...visuals.textures.grass });
     const sidewalk = material(0xd7d7cf), roof = material(0x8b5d4f), wall = material(0xe8d7bd);
+    const pharmacyFrame = material(0x35565c, 0.3);
+    const pharmacyGlass = new THREE.MeshStandardMaterial({
+      color: 0x91cbd2, roughness: 0.2, metalness: 0.1, transparent: true, opacity: 0.58, depthWrite: false,
+    });
     const scenery = new THREE.Group();
     scene.add(scenery);
     function box(parent, size, pos, mat) {
@@ -116,6 +125,20 @@ export async function initPharmaScene(container, assets, { onPick } = {}) {
       parent.add(mesh);
       return mesh;
     }
+    function factoryFrame(root, accent) {
+      for (const x of [-5.8, 5.8]) {
+        for (const z of [-4.8, 4.8]) box(root, [0.35, 7.2, 0.35], [x, 3.6, z], steel);
+        box(root, [0.35, 0.35, 9.9], [x, 7.2, 0], accent);
+      }
+      for (const z of [-4.8, 4.8]) box(root, [11.9, 0.35, 0.35], [0, 7.2, z], accent);
+      box(root, [11.4, 0.3, 2.4], [0, 7.35, -3.5], white);
+      box(root, [11, 3.6, 0.2], [0, 2.9, -4.65], white);
+      for (const x of [-3.6, 0, 3.6]) {
+        box(root, [2.4, 1.1, 0.12], [x, 4.1, -4.5], blue);
+      }
+      box(root, [3, 0.45, 1.1], [2.8, 7.72, -3.5], steel);
+      for (const x of [2.1, 3.5]) cylinder(root, 0.3, 0.08, [x, 7.98, -3.5], dark);
+    }
     function label(parent, text, pos, className) {
       const div = document.createElement('div');
       div.className = className;
@@ -127,12 +150,14 @@ export async function initPharmaScene(container, assets, { onPick } = {}) {
       return object;
     }
     box(scenery, [220, 0.4, 100], [-22, -0.5, 0], grass);
-    box(scenery, [66, 0.2, 50], [-82, -0.15, -28], ground);
-    box(scenery, [96, 0.25, 60], [10, -0.12, -12], ground);
-    const cityWidth = CITY_ROADS.right - CITY_ROADS.left + CITY_ROADS.width;
+    box(scenery, [90, 0.2, 24], [-72, -0.15, -32], ground);
+    box(scenery, [20, 0.2, 28], [-12, -0.15, -5], ground);
+    box(scenery, [80, 0.25, 60], [38, -0.12, -14], ground);
     for (const z of [CITY_ROADS.north, CITY_ROADS.south]) {
-      box(scenery, [cityWidth, 0.12, CITY_ROADS.width], [(CITY_ROADS.left + CITY_ROADS.right) / 2, 0.02, z], dark);
-      for (let x = CITY_ROADS.left + 6; x < CITY_ROADS.right; x += 6) {
+      const left = z === CITY_ROADS.south ? PHARMA_LAYOUT.centers[0][0] : CITY_ROADS.left;
+      const right = CITY_ROADS.right;
+      box(scenery, [right - left + CITY_ROADS.width, 0.12, CITY_ROADS.width], [(left + right) / 2, 0.02, z], dark);
+      for (let x = left + 6; x < right; x += 6) {
         box(scenery, [2.5, 0.02, 0.12], [x, 0.1, z], white);
       }
     }
@@ -166,13 +191,87 @@ export async function initPharmaScene(container, assets, { onPick } = {}) {
         box(home, [1.5 * scale, 1.3 * scale, 0.15], [side * 2.1 * scale, 2.5 * scale, 3.08 * scale], blue);
       }
     }
+    let pharmacySignMaterial;
+    function makePharmacy(root) {
+      if (!pharmacySignMaterial) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 1024;
+        canvas.height = 144;
+        const context = canvas.getContext('2d');
+        if (!context) throw new Error('Não foi possível gerar a identificação das farmácias.');
+        context.fillStyle = '#ffffff';
+        context.font = '700 96px system-ui, sans-serif';
+        context.textAlign = 'center';
+        context.textBaseline = 'middle';
+        context.fillText('FARMÁCIA', canvas.width / 2, canvas.height / 2);
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.anisotropy = 4;
+        pharmacySignMaterial = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false });
+      }
+      const sign = new THREE.Mesh(new THREE.PlaneGeometry(8, 1.12), pharmacySignMaterial);
+      sign.position.set(0.7, 5.55, 4.73);
+      root.add(sign);
+
+      const green = accentMaterials['pharma-pharmacy'];
+      box(root, [10.8, 0.45, 8.8], [0, 0.28, 0], white);
+      box(root, [10.8, 5.7, 0.35], [0, 3.35, -4.25], white);
+      for (const side of [-1, 1]) {
+        box(root, [0.4, 5.7, 8.7], [side * 5.2, 3.35, 0], white);
+        box(root, [0.12, 1.15, 8.7], [side * 5.43, 5.55, 0], green);
+        for (const z of [-2, 1.3]) {
+          box(root, [0.12, 2.4, 2.3], [side * 5.44, 3, z], blue);
+          for (const y of [1.75, 4.25]) box(root, [0.18, 0.12, 2.5], [side * 5.5, y, z], pharmacyFrame);
+          box(root, [0.18, 2.6, 0.12], [side * 5.5, 3, z], pharmacyFrame);
+        }
+      }
+      box(root, [11.3, 0.4, 9.2], [0, 6.35, 0], white);
+      box(root, [11, 1.15, 0.42], [0, 5.55, 4.5], green);
+      box(root, [0.95, 0.28, 0.12], [-4.15, 5.55, 4.78], white);
+      box(root, [0.28, 0.95, 0.12], [-4.15, 5.55, 4.78], white);
+
+      const storefront = new THREE.Mesh(new THREE.PlaneGeometry(10.2, 4.1), pharmacyGlass);
+      storefront.position.set(0, 2.65, 4.42);
+      root.add(storefront);
+      for (const x of [-5.1, -3.25, -1.5, 0, 1.5, 3.25, 5.1]) {
+        box(root, [0.12, 4.2, 0.14], [x, 2.65, 4.51], pharmacyFrame);
+      }
+      for (const y of [0.55, 4.75]) box(root, [10.3, 0.12, 0.14], [0, y, 4.51], pharmacyFrame);
+      for (const x of [-0.28, 0.28]) box(root, [0.08, 0.95, 0.14], [x, 2.35, 4.6], white);
+      box(root, [3.6, 0.2, 1], [0, 4.6, 4.75], green);
+
+      for (const x of [-3.1, 3.1]) {
+        box(root, [3.2, 3.8, 0.15], [x, 2.55, -4.02], white);
+        for (const y of [1.1, 2.2, 3.3]) {
+          box(root, [3.2, 0.12, 0.65], [x, y, -3.65], steel);
+          for (const [index, offset] of [-0.9, 0, 0.9].entries()) {
+            box(root, [0.55, 0.65, 0.4], [x + offset, y + 0.38, -3.65], [teal, white, carton][index]);
+          }
+        }
+      }
+      box(root, [3.4, 1.2, 1.2], [0, 1.1, -2.5], white);
+      box(root, [3.6, 0.15, 1.3], [0, 1.78, -2.5], green);
+      for (const side of [-1, 1]) {
+        box(root, [0.8, 0.45, 0.7], [side * 4.6, 0.45, 4.75], white);
+        box(root, [0.6, 0.5, 0.5], [side * 4.6, 0.9, 4.75], green);
+      }
+
+      box(root, [2.8, 0.12, 2.8], [-1.8, 6.61, -0.3], green);
+      box(root, [1.8, 0.08, 0.45], [-1.8, 6.71, -0.3], white);
+      box(root, [0.45, 0.08, 1.8], [-1.8, 6.71, -0.3], white);
+      box(root, [2.4, 0.4, 1.5], [2.3, 6.7, -0.7], steel);
+      for (const x of [1.7, 2.9]) cylinder(root, 0.35, 0.08, [x, 6.94, -0.7], dark);
+    }
     for (const [index, { x, z, scale = 1 }] of PHARMA_LAYOUT.houses.entries()) {
       makeHouse(x, z, index % 2 ? wall : white, scale);
     }
-    const factoryLabel = label(scene, 'SMART PHARMA · FÁBRICA', [-82, 1, -49], 'energy-zone-label');
-    const cityLabel = label(scene, 'SMART CITY · CASAS E 3 FARMÁCIAS', [10, 1, -43], 'energy-zone-label');
-    box(scenery, [94, 0.08, 0.6], [10, 0.03, -39], sidewalk);
-    box(scenery, [94, 0.08, 0.6], [10, 0.03, CITY_ROADS.south - CITY_ROADS.width / 2 - 0.4], sidewalk);
+    for (const [title, pos] of [
+      ['FÁBRICA · ETAPAS 1–5', [-72, 1, -50]],
+      ['DISTRIBUIÇÃO · ETAPA 6', [-12, 1, -22]],
+      ['CIDADE · FARMÁCIAS E PACIENTES', [38, 1, -50]],
+    ]) label(scene, title, pos, 'energy-zone-label pharma-area-label').visible = true;
+    box(scenery, [74, 0.08, 0.6], [38, 0.03, -42], sidewalk);
+    box(scenery, [74, 0.08, 0.6], [38, 0.03, CITY_ROADS.south - CITY_ROADS.width / 2 - 0.4], sidewalk);
 
     function makeDock(asset) {
       const { x, z } = pharmaDock(asset);
@@ -193,8 +292,51 @@ export async function initPharmaScene(container, assets, { onPick } = {}) {
       const direction = end.clone().sub(start).normalize();
       scenery.add(new THREE.ArrowHelper(direction, start.clone().addScaledVector(direction, 6), Math.max(1, start.distanceTo(end) - 12), 0x239caa, 1.5, 1));
     }
+    const warehouse = assets.find((asset) => asset.type === 'pharma-storage');
+    const center = assets.find((asset) => asset.type === 'pharma-distribution');
+    const pharmacies = assets.filter((asset) => asset.type === 'pharma-pharmacy');
+    for (const [from, to, roadZ] of [
+      [warehouse, center, PHARMA_LAYOUT.roadZ],
+      ...pharmacies.map((pharmacy) => [center, pharmacy, PHARMA_LAYOUT.cityRoadZ]),
+    ]) {
+      const points = pharmaRoute(pharmaDock(from), pharmaDock(to), roadZ);
+      for (let index = 1; index < points.length; index++) {
+        const start = new THREE.Vector3(points[index - 1].x, 0.25, points[index - 1].z);
+        const end = new THREE.Vector3(points[index].x, 0.25, points[index].z);
+        const direction = end.clone().sub(start).normalize();
+        const length = start.distanceTo(end);
+        if (length > 4) scenery.add(new THREE.ArrowHelper(direction, start.addScaledVector(direction, 1), length - 2, 0x5bc5dd, 1.5, 1));
+      }
+    }
+
+    const steps = [
+      ['PHA-REC-001', '1. Matéria-prima'],
+      ['PHA-PRD-001', '2. Produção'],
+      ['PHA-QUA-001', '3. Qualidade'],
+      ['PHA-EMB-001', '4. Embalagem'],
+      ['PHA-ARM-001', '5. Armazém'],
+      ['PHA-DIS-001', '6. Distribuição'],
+      ['PHA-FAR-001', '7. Farmácias'],
+    ];
+    const stepNumbers = new Map(steps.map(([id], index) => [id, index + 1]));
+    stepNumbers.set('PHA-FAR-002', 7);
+    const chain = document.createElement('nav');
+    chain.className = 'pharma-chain';
+    chain.setAttribute('aria-label', 'Cadeia farmacêutica: do lote ao paciente');
+    for (const [id, title] of steps) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = title;
+      button.addEventListener('click', () => onPick?.(id));
+      chain.appendChild(button);
+    }
+    const patient = document.createElement('span');
+    patient.textContent = 'Paciente';
+    chain.appendChild(patient);
+    container.appendChild(chain);
+    releases.push(() => chain.remove());
     const rendered = [], hits = [], areaLabels = [];
-    for (const [index, asset] of assets.entries()) {
+    for (const asset of assets) {
       const root = new THREE.Group();
       root.position.set(...asset.pos);
       if (asset.type === 'pharma-truck') {
@@ -208,6 +350,10 @@ export async function initPharmaScene(container, assets, { onPick } = {}) {
       }
       scene.add(root);
       let rotor = null, wheels = [];
+      const modelMeshes = new Set();
+      if (['pharma-production', 'pharma-quality', 'pharma-packaging'].includes(asset.type)) {
+        factoryFrame(root, accentMaterials[asset.type]);
+      }
       if (asset.type === 'pharma-production') {
         box(root, [11, 0.5, 10], [0, 0.3, 0], white);
         for (const x of [-2.7, 2.7]) {
@@ -235,33 +381,36 @@ export async function initPharmaScene(container, assets, { onPick } = {}) {
         box(root, [8.6, 0.35, 0.35], [0, 5, -2.7], accentMaterials[asset.type]);
         for (const x of [-3.5, 0, 3.5]) box(root, [1.1, 1.1, 1.1], [x, 2.6, 0], carton);
       } else if (asset.type === 'pharma-truck') {
-        box(root, [4.5, 4.2, 7], [0, 3.2, -1.5], white);
-        box(root, [4.5, 3.2, 3], [0, 2.7, 3.5], accentMaterials['pharma-storage']);
-        box(root, [3.4, 1.3, 0.16], [0, 3.5, 5.05], blue);
-        box(root, [2.4, 0.9, 0.5], [0, 4.9, -5.1], steel);
-        box(root, [2.5, 2.2, 0.35], [0, 2.3, -5.15], blue);
-        for (const x of [-2.3, 2.3]) for (const z of [-3.5, 3.5]) {
-          const wheel = cylinder(root, 0.9, 0.6, [x, 1, z], dark);
-          wheel.rotation.z = Math.PI / 2;
-          wheels.push(wheel);
-        }
+        const vehicle = new THREE.Group();
+        vehicle.add(visuals.models.truck.clone(true));
+        const roof = new THREE.Box3().setFromObject(vehicle).max.y;
+        box(vehicle, [1.1, 0.6, 1.8], [-0.5, roof + 0.3, 0], white);
+        box(vehicle, [0.12, 0.3, 1.5], [0.06, roof + 0.3, 0], blue);
+        vehicle.rotation.y = -Math.PI / 2;
+        root.add(vehicle);
+        vehicle.traverse((node) => {
+          if (node.isMesh) modelMeshes.add(node);
+          if (node.name === 'energy-wheel') wheels.push(node);
+        });
+      } else if (asset.type === 'pharma-pharmacy') {
+        makePharmacy(root);
       } else {
         box(root, [11, 0.4, 9], [0, 0.3, 0], white);
         box(root, [11, 6, 0.4], [0, 3.5, -4.5], white);
         for (const x of [-5.3, 5.3]) box(root, [0.4, 6, 9], [x, 3.5, 0], white);
         box(root, [11.5, 0.5, 9.5], [0, 6.7, 0], asset.cold ? blue : accentMaterials[asset.type]);
         box(root, [6, 1.2, 0.25], [0, 5.2, 4.75], accentMaterials[asset.type]);
+        for (const x of [-4.5, 4.5]) {
+          box(root, [1.1, 2.2, 0.12], [x, 3.1, 4.62], blue);
+          box(root, [0.16, 5.5, 0.16], [x * 1.2, 3.2, 4.5], steel);
+        }
+        box(root, [3.2, 0.45, 1.5], [1.8, 7.18, -1.7], steel);
+        for (const x of [1, 2.6]) cylinder(root, 0.35, 0.08, [x, 7.45, -1.7], dark);
         if (asset.type === 'pharma-receiving') {
           box(root, [7, 0.55, 2.4], [0, 0.65, 5.4], steel);
           for (const x of [-3.2, 0, 3.2]) {
             cylinder(root, 0.8, 1.9, [x, 1.7, -1], carton);
             cylinder(root, 0.85, 0.2, [x, 2.75, -1], blue);
-          }
-          if (['pharma-production', 'pharma-quality', 'pharma-packaging'].includes(asset.type)) {
-            for (const x of [-6.5, 6.5]) for (const z of [-5.8, 5.8]) {
-              box(root, [0.35, 7.5, 0.35], [x, 3.75, z], steel);
-            }
-            for (const z of [-5.8, 5.8]) box(root, [13.3, 0.35, 0.35], [0, 7.5, z], accentMaterials[asset.type]);
           }
           for (const x of [-3.5, 3.5]) box(root, [2, 1.7, 2], [x, 1.5, 3.2], carton);
         } else if (asset.type === 'pharma-storage') {
@@ -274,30 +423,34 @@ export async function initPharmaScene(container, assets, { onPick } = {}) {
             fan.rotation.x = Math.PI / 2;
           }
         } else if (asset.type === 'pharma-distribution') {
+          box(root, [10.8, 0.35, 1.2], [0, 4.65, 4.6], accentMaterials[asset.type]);
+          for (const x of [-4.3, 4.3]) {
+            box(root, [0.45, 4.2, 0.45], [x, 2.45, 4], steel);
+            box(root, [1.3, 2.2, 0.12], [x, 3.1, 4.65], blue);
+          }
           for (const x of [-3.5, 0, 3.5]) {
             box(root, [0.25, 4.4, 0.25], [x, 2.5, -1.5], steel);
             box(root, [2.7, 0.2, 0.3], [x, 1.8, -1.5], accentMaterials[asset.type]);
             box(root, [2.7, 0.2, 0.3], [x, 3.7, -1.5], accentMaterials[asset.type]);
-            box(root, [1.8, 1.2, 1.5], [x, 2.7, -1.5], carton);
+            for (const y of [2.5, 4.3]) box(root, [1.8, 1.1, 1.5], [x, y, -1.5], carton);
           }
           box(root, [7, 0.45, 2], [0, 0.55, 5.2], steel);
-          for (const x of [-4.3, 4.3]) box(root, [0.35, 3.8, 0.35], [x, 2.1, 4.1], accentMaterials[asset.type]);
-        } else if (asset.type === 'pharma-pharmacy') {
-          box(root, [7, 0.85, 1.2], [0, 1, 4.7], accentMaterials[asset.type]);
-          box(root, [5, 0.25, 1], [0, 2.3, 4.2], white);
-          box(root, [3, 0.7, 0.4], [0, 5.1, 4.6], teal);
-          box(root, [0.7, 3, 0.4], [0, 5.1, 4.6], teal);
-          box(root, [8, 0.35, 2], [0, 6, 5.3], accentMaterials[asset.type]);
+          for (const x of [-2.5, 0, 2.5]) {
+            box(root, [1.5, 0.2, 1.2], [x, 0.9, 2.6], steel);
+            box(root, [1.25, 1.1, 1], [x, 1.55, 2.6], carton);
+          }
         }
       }
       const status = material(COLORS.online);
       const marker = cylinder(root, 0.55, 0.9, [5, 7.3, 0], status);
       const inventory = box(root, [8, 0.25, 0.7], [0, 0.6, 5], teal);
-      const name = label(root, `${index + 1}. ${asset.name}`, [0, 8.5, 0], 'energy-zone-label');
+      const step = stepNumbers.get(asset.id);
+      if (step) label(root, String(step), [0, 9.5, 0], 'pharma-step-label').visible = true;
+      const name = label(root, `${step ? `${step}. ` : ''}${asset.name}`, [0, 8.5, 0], 'energy-zone-label');
       const reading = label(root, asset.id, [0, 7.2, 0], 'scenario-asset-label');
       const vehicleLabel = asset.type === 'pharma-truck'
         ? label(root, 'Carregando', [0, 6.1, 0], 'energy-zone-label') : null;
-      batchStaticMeshes(root, new Set([marker, inventory, rotor, ...wheels]));
+      batchStaticMeshes(root, new Set([marker, inventory, rotor, ...wheels, ...modelMeshes]));
       root.traverse((node) => {
         if (node.isMesh) { node.userData.assetId = asset.id; hits.push(node); }
       });
@@ -312,31 +465,18 @@ export async function initPharmaScene(container, assets, { onPick } = {}) {
       x: root.position.x, z: root.position.z, heading: root.rotation.y,
     })));
     const traffic = createCityTraffic(truckObstacles());
-    const carColors = [0xe15f4d, 0x359ec4, 0xe9b84f, 0x7d70bc, 0x72ad71];
-    const carWheelGeometry = new THREE.CylinderGeometry(0.34, 0.34, 0.28, 10);
-    const cityCars = traffic.map((car, index) => {
+    const cityCars = traffic.map((car) => {
       const root = new THREE.Group();
       root.position.set(car.x, 0, car.z);
       root.rotation.y = car.heading;
       scene.add(root);
-      const paint = material(carColors[index]);
-      box(root, [3.2, 0.7, 1.5], [0, 0.8, 0], paint);
-      box(root, [1.6, 0.7, 1.3], [-0.25, 1.45, 0], paint);
-      box(root, [0.08, 0.45, 1.1], [0.58, 1.45, 0], blue);
+      root.add(visuals.models.car.clone(true));
       const wheels = [];
-      for (const x of [-1, 1]) for (const z of [-0.82, 0.82]) {
-        const wheel = new THREE.Mesh(carWheelGeometry, dark);
-        wheel.position.set(x, 0.34, z);
-        wheel.rotation.x = Math.PI / 2;
-        wheel.castShadow = wheel.receiveShadow = true;
-        root.add(wheel);
-        wheels.push(wheel);
-      }
-      batchStaticMeshes(root, new Set(wheels));
+      root.traverse((node) => { if (node.name === 'energy-wheel') wheels.push(node); });
       return { car, root, wheels };
     });
 
-    let selected = null, raf = 0, disposed = false, lastInteraction = performance.now();
+    let selected = null;
     const pointer = new THREE.Vector2(), raycaster = new THREE.Raycaster();
     const pick = (event) => {
       const rect = renderer.domElement.getBoundingClientRect();
@@ -346,13 +486,10 @@ export async function initPharmaScene(container, assets, { onPick } = {}) {
     };
     const hover = trackSceneHover(renderer.domElement, pick);
     const onClick = (event) => { const id = pick(event); if (id) onPick?.(id); };
-    const interact = () => { lastInteraction = performance.now(); controls.autoRotate = false; };
     renderer.domElement.addEventListener('click', onClick);
-    controls.addEventListener('start', interact);
     releases.push(() => {
       renderer.domElement.removeEventListener('click', onClick);
       hover.dispose();
-      controls.removeEventListener('start', interact);
     });
     function resize() {
       const width = container.clientWidth, height = container.clientHeight;
@@ -369,17 +506,11 @@ export async function initPharmaScene(container, assets, { onPick } = {}) {
     }
     const observer = new ResizeObserver(resize);
     observer.observe(container);
-    releases.push(() => { disposed = true; cancelAnimationFrame(raf); observer.disconnect(); });
-    const clock = new THREE.Clock();
-    function animate() {
-      if (disposed) return;
-      raf = requestAnimationFrame(animate);
-      const dt = Math.min(clock.getDelta(), 0.1);
+    releases.push(() => observer.disconnect());
+    function animate(elapsed) {
+      const dt = Math.min(elapsed, 1);
       const now = performance.now();
       const hovered = hover.current();
-      factoryLabel.visible = assets.some((asset) => asset.id === hovered && Object.hasOwn(PHARMA_LAYOUT.factory, asset.id.split('-')[1]));
-      cityLabel.visible = assets.some((asset) => asset.id === hovered && asset.type === 'pharma-pharmacy');
-      controls.autoRotate = !selected && now - lastInteraction > 20000;
       for (const item of rendered) {
         const { asset, root } = item;
         item.marker.material.color.set(COLORS[asset.status] ?? COLORS.offline);
@@ -398,18 +529,27 @@ export async function initPharmaScene(container, assets, { onPick } = {}) {
           if (!asset.commLost) {
             const delta = Math.atan2(Math.sin(pose.heading - root.rotation.y), Math.cos(pose.heading - root.rotation.y));
             root.rotation.y += delta * (1 - Math.exp(-dt * 8));
-            item.wheels.forEach((wheel) => wheel.rotateY(-pose.travelled / 0.9));
+            item.wheels.forEach((wheel) => {
+              if (wheel.userData.radius > 0) wheel.rotation.z -= pose.travelled / wheel.userData.radius;
+            });
           }
           const state = asset.vehicleState;
           setText(item.vehicleLabel.element, asset.commLost ? 'Sem telemetria' : VEHICLE_STATE_LABELS[state] || 'Aguardando');
           item.vehicleLabel.visible = hovered === asset.id;
         }
       }
-      stepCityTraffic(traffic, dt, truckObstacles());
-      for (const { car, root, wheels } of cityCars) {
+      const travelled = cityCars.map(() => 0);
+      const obstacles = truckObstacles();
+      for (let remaining = dt; remaining > 1e-9; remaining -= Math.min(remaining, 0.1)) {
+        stepCityTraffic(traffic, Math.min(remaining, 0.1), obstacles);
+        traffic.forEach((car, index) => { travelled[index] += car.travelled; });
+      }
+      for (const [index, { car, root, wheels }] of cityCars.entries()) {
         root.position.set(car.x, 0, car.z);
         root.rotation.y = car.heading;
-        wheels.forEach((wheel) => wheel.rotateY(-car.travelled / 0.34));
+        wheels.forEach((wheel) => {
+          if (wheel.userData.radius > 0) wheel.rotation.z -= travelled[index] / wheel.userData.radius;
+        });
       }
       for (const { asset, label } of areaLabels) label.visible = hovered === asset.id;
       for (const dock of docks) {
@@ -426,13 +566,15 @@ export async function initPharmaScene(container, assets, { onPick } = {}) {
           : active ? `${dock.asset.id} · ${vehicle.asset.vehicleState === 'loading' ? 'CARREGANDO' : 'DESCARREGANDO'}`
             : `${dock.asset.id} · AGUARDANDO`);
       }
-      controls.update();
+      updatePharmaControls(controls, dt);
       renderer.render(scene, camera);
       labels.render(scene, camera);
     }
-    animate();
+    releases.push(startPharmaRenderLoop(animate, () => {
+      vehicles.forEach(({ motion }) => { motion.connected = false; });
+    }));
     return {
-      select(id) { selected = id; if (id) interact(); },
+      select(id) { selected = id; },
       dispose: releaseAll,
     };
   } catch (error) {

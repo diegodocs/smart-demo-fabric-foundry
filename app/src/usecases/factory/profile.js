@@ -16,7 +16,7 @@ const fmt = (n, d = 0) => Number(n).toLocaleString('pt-BR', { minimumFractionDig
 export const factoryProfile = {
   id: 'factory',
   forceMock: false,
-  documentTitle: 'Smart Factory — Central de Monitoramento IoT',
+  documentTitle: 'Smart Factory — Central de Monitoramento',
   plant: 'Unidade Industrial Guarulhos · Linha A · Turno 2',
   operator: { login: 'm.silveira', name: 'Marcos Silveira', avatar: 'MS', meta: 'Matrícula 20458 · Operador Sênior' },
   initialKpis: { pieces: 14820, commands: 7, paramChanges: 0, unplanned: 2 },
@@ -47,7 +47,7 @@ export const factoryProfile = {
   },
   chrome: {
     wordmark: 'Smart <b>Factory</b>',
-    title: 'Central de Monitoramento IoT — Smart Factory',
+    title: 'Central de Monitoramento — Smart Factory',
     subtitle: 'Unidade Industrial Guarulhos · Linha A · Turno 2 (14:00 – 22:00)',
     hud: '🏭 Smart Factory <small>SPA · reativa · Fabric RTI</small>',
     assetsTitle: 'Ativos da linha',

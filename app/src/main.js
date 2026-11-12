@@ -1,7 +1,7 @@
 // Ponto de entrada da SPA: cena 3D + store reativo + integrações (Fabric RTI / Foundry).
 import { $, pad, toast } from './ui/dom.js';
 import { store, selectMachine, closeEditor, attachTelemetrySource, applyTelemetry, setConnection, resetScenario } from './core/state.js';
-import { createTelemetrySource } from './integration/telemetry/index.js';
+import { createTelemetrySource, readTelemetryMode, saveTelemetryMode } from './integration/telemetry/index.js';
 import { createAgent } from './integration/agent/index.js';
 import { machineSnapshot } from './integration/agent/context.js';
 import { mountSidePanels, hydrateChrome } from './ui/sidePanels.js';
@@ -11,6 +11,8 @@ import { mountAssistant } from './ui/assistant.js';
 import { activeScenario, readScenarioId, saveScenarioId, setActiveScenario } from './usecases/registry.js';
 
 const ENV_TELEMETRY = import.meta.env?.VITE_TELEMETRY_MODE === 'fabric' ? 'fabric' : 'mock';
+const ENV_PHARMA_TELEMETRY = ['mock', 'fabric'].includes(import.meta.env?.VITE_PHARMA_TELEMETRY_MODE)
+  ? import.meta.env.VITE_PHARMA_TELEMETRY_MODE : ENV_TELEMETRY;
 const ENV_AGENT = import.meta.env?.VITE_AGENT_MODE || 'mock';
 
 // ─── Cabeçalho: relógio, sessão ───────────────────────────────────────────
@@ -32,6 +34,7 @@ let scene = null;
 let source = null;
 let agent = null;
 let switching = false;
+let pharmaTelemetryMode = null;
 
 const assistant = mountAssistant({
   mode: 'mock', label: 'Agente local (mock)', reset() {},
@@ -44,7 +47,8 @@ store.subscribe(['selection'], (s) => scene?.select(s.selectedId));
 
 function modesFor(profile) {
   return {
-    telemetry: profile.forceMock ? 'mock' : ENV_TELEMETRY,
+    telemetry: profile.forceMock ? 'mock' : profile.id === 'pharma'
+      ? pharmaTelemetryMode ?? readTelemetryMode(profile.id, ENV_PHARMA_TELEMETRY) : ENV_TELEMETRY,
     agent: profile.forceMock ? 'mock' : ENV_AGENT,
   };
 }
@@ -53,8 +57,10 @@ async function activate(id, { retryScene = false } = {}) {
   if (switching) return;
   switching = true;
   const select = $('#scenario-select');
+  const telemetrySelect = $('#telemetry-select');
   const container = $('#canvas-container');
   select.disabled = true;
+  telemetrySelect.disabled = true;
   try {
     if (retryScene && id !== store.state.scenario) return;
     if (!retryScene) source?.stop?.();
@@ -70,6 +76,8 @@ async function activate(id, { retryScene = false } = {}) {
       profile = setActiveScenario(id);
       saveScenarioId(profile.id);
       const modes = modesFor(profile);
+      $('#telemetry-choice').hidden = profile.id !== 'pharma';
+      telemetrySelect.value = modes.telemetry;
       const assets = profile.createAssets();
       if (modes.telemetry === 'fabric') assets.forEach((d) => { d.commLost = true; });
       resetScenario(assets, profile.initialKpis, {
@@ -135,12 +143,30 @@ async function activate(id, { retryScene = false } = {}) {
   } finally {
     switching = false;
     select.disabled = false;
+    telemetrySelect.disabled = false;
     select.value = store.state.scenario;
   }
 }
 
 $('#scenario-select').addEventListener('change', (e) => {
   if (e.target.value !== store.state.scenario) activate(e.target.value);
+});
+
+$('#telemetry-select').addEventListener('change', async (e) => {
+  if (switching || store.state.scenario !== 'pharma' || e.target.value === source?.mode) return;
+  pharmaTelemetryMode = e.target.value;
+  saveTelemetryMode('pharma', e.target.value);
+  await activate('pharma');
+});
+
+store.subscribe(['connection', 'scenario'], (s) => {
+  if (s.scenario !== 'pharma') return;
+  const c = s.connection;
+  $('#telemetry-detail').textContent = c.mode === 'mock'
+    ? 'Demonstração local: telemetria e comandos independem do Fabric. Trocar a fonte reinicia a simulação.'
+    : c.status === 'error'
+      ? `${c.detail} Para apresentar sem essa dependência, selecione Simulação local.`
+      : 'Fabric RTI: requer proxy, Eventhouse acessível e simulador Node publicando. Trocar a fonte reinicia a simulação local.';
 });
 
 activate(readScenarioId());

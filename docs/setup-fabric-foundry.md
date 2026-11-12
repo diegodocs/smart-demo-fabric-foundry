@@ -36,7 +36,7 @@ Sem Fabric nem Foundry, use `VITE_TELEMETRY_MODE=mock`, `VITE_AGENT_MODE=mock` e
 | Smart Farm | `farm` | 16 ativos de campo, rebanho e instalações |
 | Smart Energy | `energy` | 40 ativos de geração, distribuição e mobilidade |
 | Smart Mining | `mining` | 21 ativos: 4 caminhões de mina, 3 britagens, 6 silos e 3 centros, além das etapas compartilhadas |
-| Smart Pharma | `pharma` | 15 ativos: cinco setores da fábrica, cinco caminhões, dois centros de distribuição e três farmácias |
+| Smart Pharma | `pharma` | 11 ativos: cinco setores da fábrica, três caminhões, um centro de distribuição e duas farmácias |
 
 A SPA envia o cenário ativo automaticamente. Para publicar Farm, por exemplo, use `$env:SCENARIO='farm'; npm run simulate:devices` no PowerShell. Troque o valor por qualquer ID da tabela; para ingestão simultânea, mantenha um simulador por cenário em terminais separados. Trocar a seleção na SPA não inicia nem reinicia os simuladores Node.
 
@@ -88,12 +88,16 @@ O campo JSON **`isRunning`**, do tipo booleano, registra o estado operacional do
 
 | Valor | Significado no simulador |
 |---|---|
-| `true` | Em funcionamento: modo `auto` ou `manual` com velocidade efetiva maior que zero. |
-| `false` | Parado: modo `off`, modo `paused` ou velocidade zero, mesmo que ainda exista temperatura, vibração ou utilização residual. |
+| `true` | O dispositivo está em funcionamento na simulação. |
+| `false` | O dispositivo está parado ou ocioso, mesmo que ainda exista temperatura, vibração ou utilização residual. |
 
-O simulador calcula o campo depois de aplicar o controle, pela velocidade efetiva do modelo, não por uma estimativa baseada em `usage`. Em equipamentos reais, o produtor deve obter esse estado do dispositivo/controlador; um comando enviado não comprova execução física.
+O simulador genérico calcula o campo depois de aplicar o controle, considerando modo e velocidade efetiva; os cenários integrados também consideram a atividade do processo. Nenhum deles estima o estado com base em `usage`. Em equipamentos reais, o produtor deve obter esse estado do dispositivo/controlador; um comando enviado não comprova execução física.
 
-**Início da demonstração:** UI, proxy e simulador usam o mesmo cadastro inicial e a mesma regra para `isRunning`. As 16 máquinas começam com comunicação e enviam telemetria. Quinze começam em `auto`, velocidade 100 e `isRunning=true`; o `ROB-003` começa parado, em `off`, velocidade zero e `isRunning=false`. Não há um terceiro estado nem envio de `null` nesse campo. Uma máquina em alerta de temperatura ou vibração ainda pode estar em funcionamento.
+Na Smart Pharma, `isRunning` também é `false` quando uma etapa aguarda um lote ou um caminhão está estacionado, mesmo com comunicação normal. Para distinguir esses casos, cada evento Pharma inclui `status`, calculado pelas mesmas regras da interface: `online` para estado normal, `alert` para alertas ou pausa e `offline` para modo desligado. Por exemplo, o `PHA-TRK-003` começa com `status=online` e `isRunning=false`. Os 11 ativos começam online, mas podem entrar em alerta quando houver lotes bloqueados ou temperatura fora dos limites.
+
+Um dispositivo sem comunicação deixa de publicar: o último `status=online` não comprova que ele ainda está online. O proxy usa `ts` e `FABRIC_STALE_SEC` para indicar perda de comunicação; consultas externas devem aplicar o mesmo critério e considerar também IDs sem registros. O mock do navegador e o simulador Node são execuções independentes: para comparar com o Fabric, selecione **Fabric RTI** na Smart Pharma e mantenha um único simulador Pharma atualizado em execução.
+
+**Smart Factory (`SCENARIO=factory`):** UI, proxy e simulador usam o mesmo cadastro inicial e a mesma regra para `isRunning`. As 16 máquinas começam com comunicação e enviam telemetria. Quinze começam em `auto`, velocidade 100 e `isRunning=true`; o `ROB-003` começa parado, em `off`, velocidade zero e `isRunning=false`. Nos demais cenários, o simulador usa o catálogo e os estados iniciais próprios. Não há um terceiro estado nem envio de `null` nesse campo. Uma máquina em alerta de temperatura ou vibração ainda pode estar em funcionamento.
 
 O primeiro lote é uma fotografia dos valores iniciais (`temp`, `vib`, `usage`, `mode`, `speed`, `isRunning`), antes de aplicar ruído ou evolução física. Os ciclos seguintes simulam a evolução normalmente. O mock do navegador e o loopback seguem a mesma regra. Antes de publicar, o simulador consulta o controle do proxy: comandos já aceitos são respeitados, não sobrescritos por um reinício do simulador.
 
@@ -191,9 +195,11 @@ Não recrie a tabela. Registros antigos continuam sem valor nessa coluna; o coma
 
 ### Colunas adicionais para Smart Farm, Smart Energy, Smart Mining e Smart Pharma
 
-Sem overrides, os quatro cenários usam o mesmo Eventstream/tabela da fábrica; com destinos separados, aplique as colunas e mapeamentos necessários a cada destino correspondente. A Smart Farm envia combustível, velocidade, rebanho e clima; a Smart Energy calcula água, geração, consumo, circuitos e mobilidade em conjunto; a Smart Mining calcula o balanço de massa, estoques, caminhões e entregas. A Smart Pharma envia unidades equivalentes, lotes em atendimento, bloqueios e entregas ao consumidor.
+Sem overrides, os quatro cenários além da Factory usam o mesmo Eventstream/tabela compartilhado; com destinos separados, aplique as colunas e mapeamentos necessários a cada destino correspondente. A Smart Farm envia combustível, velocidade, rebanho e clima; a Smart Energy calcula água, geração, consumo, circuitos e mobilidade em conjunto; a Smart Mining calcula o balanço de massa, estoques, caminhões e entregas. A Smart Pharma envia unidades equivalentes, lotes em atendimento, bloqueios e entregas ao consumidor.
 
 `usage` e `speed` precisam ser `real`: vários cenários enviam utilização fracionária e o controle aceita velocidade fracionária. Esses valores podem ser ingeridos como nulos em colunas `int`. Para uma tabela existente com esses campos como `int`, preserve o histórico seguindo [Change column type without data loss](https://learn.microsoft.com/en-us/kusto/management/change-column-type-without-data-loss?view=microsoft-fabric): crie uma nova tabela com o mesmo schema e ordem de colunas, alterando os campos para `real`; copie os dados com `todouble(usage)` e `todouble(speed)`; replique mapeamentos e políticas necessários; e troque os nomes das tabelas. Pause os produtores durante a cópia e confira a nova ingestão antes de remover qualquer cópia. Valores fracionários que já foram ingeridos como nulos não podem ser recuperados da tabela antiga. Não use `.alter column` diretamente, pois o Kusto deixa os valores históricos dessas colunas nulos.
+
+Antes de alterar um fluxo de ingestão de streaming ativo, siga o procedimento de [coordenação de mudanças de schema](https://learn.microsoft.com/kusto/management/data-ingestion/streaming-ingestion-schema-changes?view=microsoft-fabric): suspenda a ingestão e aguarde as requisições pendentes; depois das alterações na tabela e no mapeamento, limpe o cache de schema e só então retome.
 
 Para receber as métricas nativas, adicione as colunas abaixo no banco KQL, sem apagar as existentes:
 
@@ -207,11 +213,32 @@ Para receber as métricas nativas, adicione as colunas abaixo no banco KQL, sem 
   positionX:real, positionZ:real, heading:real, chargeKw:real,
   throughputTph:real, inventoryT:real, payloadT:real, extractedT:real, tailingsT:real, deliveredT:real,
   inventoryUnits:real, receivedUnits:real, deliveredUnits:real, quarantinedUnits:real, processedBatches:real,
-  vehicleState:string, chargerId:string, batchId:string, batchStatus:string
+  vehicleState:string, chargerId:string, batchId:string, batchStatus:string, status:string
 )
 ```
 
-No schema/mapeamento JSON do destino do Eventstream (etapa 6), **mantenha os campos existentes** e acrescente cada coluna com o caminho JSON homônimo: `powerKw` → `$.powerKw`, `batteryPct` → `$.batteryPct`, `vehicleState` → `$.vehicleState`, etc. Números são `real`; `scenario`, `vehicleState`, `chargerId`, `batchId` e `batchStatus` são `string`. Publique o pipeline atualizado.
+Se as demais colunas já existem, adicione somente a coluna Pharma sem alterar o histórico:
+
+```kusto
+.alter-merge table MachineTelemetry (status:string)
+```
+
+Use o nome da tabela configurada para Pharma. No schema/mapeamento JSON do destino do Eventstream (etapa 6), **mantenha os campos existentes** e acrescente cada coluna com o caminho JSON homônimo: `powerKw` → `$.powerKw`, `batteryPct` → `$.batteryPct`, `vehicleState` → `$.vehicleState` e `status` → `$.status`. Números são `real`; `scenario`, `vehicleState`, `chargerId`, `batchId`, `batchStatus` e `status` são `string`. Publique o pipeline atualizado. `status` é enviado pela Smart Pharma; registros antigos e outros cenários podem não ter valor nessa coluna.
+
+Não substitua um mapeamento existente por um que omita os demais campos. Reinicie o proxy e o simulador Pharma atualizado após a mudança.
+
+Para verificar as últimas leituras Pharma, após atualizar o mapeamento:
+
+```kusto
+MachineTelemetry
+| where ts > ago(10m) and machineId startswith "PHA-"
+| summarize arg_max(ts, *) by machineId
+| extend statusAtual = case(ts < ago(15s), "offline", isempty(status), "sem status", status)
+| project machineId, ts, statusAtual, isRunning
+| order by machineId asc
+```
+
+Os 15 segundos são o padrão de `FABRIC_STALE_SEC` e devem ser ajustados ao ambiente. IDs sem eventos nos últimos dez minutos não aparecem na consulta; compare-os com o catálogo para detectar ausências. Registros anteriores à alteração continuam sem `status`.
 
 | Campos | Unidade / significado |
 |---|---|
@@ -226,11 +253,12 @@ No schema/mapeamento JSON do destino do Eventstream (etapa 6), **mantenha os cam
 | `inventoryUnits`, `receivedUnits`, `deliveredUnits`, `quarantinedUnits` | Unidades equivalentes farmacêuticas em processo, recebidas, entregues e bloqueadas |
 | `processedBatches` | Lotes processados na etapa; no controle de qualidade inclui aprovados e bloqueados |
 | `batchId`, `batchStatus` | Identificador do primeiro lote em atendimento e estado demonstrativo; não é um histórico regulatório |
+| `status` | Estado Pharma (`online`, `alert`, `offline`) no instante da leitura, distinto de `isRunning` |
 | `vehicleState`, `chargerId` | `driving`, `seeking`, `approaching`, `charging`, `leaving`, `stopped`, `loading`, `hauling`, `delivering`, `unloading` ou `returning`; ID do posto reservado ou string vazia |
 
 O proxy preserva esses campos na consulta e no SSE e isola o catálogo por IDs conhecidos. Consultas usam `column_ifexists`, portanto uma tabela antiga não quebra o cenário de fábrica; isso **não cria valores** para novos campos. Sem colunas/mapeamento, Farm, Energy, Mining e Pharma exibirão métricas indisponíveis. Todos os cenários iniciam sem comunicação no modo Fabric até receber leituras; dados ausentes ou antigos não são substituídos por dados mock.
 
-Em `fabric` real, Energy e Mining interpolam posições recebidas, e Pharma posiciona seus cinco caminhões pela telemetria recebida, sem rodar o simulador integrado nem criar métricas faltantes. Reinicie o proxy e o simulador Pharma após atualizar o catálogo para publicar os novos IDs; evite simuladores antigos e novos simultâneos para os mesmos IDs. Na Farm, as rotas 3D continuam sendo uma visualização ilustrativa da atividade, não rastreamento GPS. Um produtor físico pode enviar os mesmos campos, mas deverá definir suas próprias medições e coordenadas. O simulador e o controle HTTP continuam sendo exclusivamente demonstrativos.
+Em `fabric` real, Energy e Mining interpolam posições recebidas, e Pharma posiciona seus três caminhões pela telemetria recebida, sem rodar o simulador integrado nem criar métricas faltantes. Reinicie o proxy e o simulador Pharma após atualizar o catálogo para publicar os 11 IDs atuais; evite simuladores antigos e novos simultâneos para os mesmos IDs. Leituras de `PHA-TRK-004`, `PHA-TRK-005`, `PHA-DIS-002` e `PHA-FAR-003` são ignoradas pelo catálogo atual, sem apagar seu histórico no Fabric. Na Farm, as rotas 3D continuam sendo uma visualização ilustrativa da atividade, não rastreamento GPS. Um produtor físico pode enviar os mesmos campos, mas deverá definir suas próprias medições e coordenadas. O simulador e o controle HTTP continuam sendo exclusivamente demonstrativos.
 
 Estas instruções não alteram recursos automaticamente. A suíte cobre o caminho Fabric/SSE com respostas simuladas; uma validação real exige executar a ingestão e consultar o ambiente configurado.
 
@@ -291,13 +319,12 @@ O filtro mantém fora da tabela eventuais eventos legados ou de outros produtore
 
 | Tipo KQL | Campos |
 |---|---|
-| `string` | `eventType`, `machineId`, `mode` |
+| `string` | `eventType`, `machineId`, `mode`, `status` (Smart Pharma) |
 | `datetime` | `ts` |
-| `real` | `temp`, `vib` |
-| `int` | `usage`, `speed` |
+| `real` | `temp`, `vib`, `usage`, `speed` |
 | `bool` | `isRunning` |
 
-Preserve os nomes e a capitalização. Se usar **Manage fields**, mantenha os nove campos. Se abrir um assistente de inspeção, escolha **JSON** e confira **Edit columns**. Quando forem solicitados caminhos JSON, use `$.eventType`, `$.machineId`, `$.ts`, `$.temp`, `$.vib`, `$.usage`, `$.mode`, `$.speed` e `$.isRunning`, não `$.body.temp`.
+Preserve os nomes e a capitalização. Se usar **Manage fields**, mantenha os nove campos básicos e, para Pharma, `status` e os campos adicionais necessários. Se abrir um assistente de inspeção, escolha **JSON** e confira **Edit columns**. Quando forem solicitados caminhos JSON, use `$.eventType`, `$.machineId`, `$.ts`, `$.temp`, `$.vib`, `$.usage`, `$.mode`, `$.speed`, `$.isRunning` e, para Pharma, `$.status`, não `$.body.temp`.
 
 Em um fluxo já existente, atualize o schema de entrada com uma nova amostra, preserve `isRunning` nos operadores e inclua a coluna booleana no destino. Adicionar a coluna no Eventhouse não atualiza automaticamente o schema ou o mapeamento do Eventstream. Se o campo existir na prévia da fonte mas chegar nulo à tabela, confira cada operador e o mapeamento `$.isRunning`, salve e publique.
 
@@ -394,7 +421,7 @@ O total deve aumentar, e `TipoIncorreto` deve ser zero para os novos dados. Essa
 | Há campos vazios | Nomes, tipos, caminhos JSON e campos preservados após transformações. |
 | Há dados no KQL, mas a UI indica perda de comunicação | Horários atuais, tabela/banco do proxy e IDs em `app/src/usecases/factory/catalog.js` (ou no catálogo do cenário ativo, em `app/src/usecases/<cenário>/catalog.js`). |
 
-O proxy consulta os últimos 10 minutos. As 16 máquinas transmitem desde o início; o `ROB-003` começa parado e `RESUME` ou `CYCLE_START` coloca-o em funcionamento com velocidade 100. Ajustar `FABRIC_STALE_SEC` muda a tolerância da UI, mas não acelera a ingestão.
+O proxy consulta os últimos 10 minutos. No cenário Smart Factory, os 16 ativos transmitem desde o início; o `ROB-003` começa parado e `RESUME` ou `CYCLE_START` coloca-o em funcionamento com velocidade 100. Nos demais cenários, consulte os estados iniciais do catálogo correspondente. Ajustar `FABRIC_STALE_SEC` muda a tolerância da UI, mas não acelera a ingestão.
 
 `GET /api/health` com indicadores `true` verifica presença de configuração, não credenciais nem chegada de dados. Status conectado significa conexão com o proxy. O ACK de controle não comprova execução; confirme o estado na telemetria. A aplicação ainda não oferece confirmação individual por `eventId`.
 
@@ -427,6 +454,8 @@ Para manter os cinco domínios independentes, repita estas etapas para cada cen�
 4. Envie uma pergunta sobre uma leitura existente e confirme que a resposta incluiu uma chamada à ferramenta e os dados da tabela correta. `GET /api/health` não verifica essa conexão.
 
 Se a conexão usar autenticação delegada `UserEntraToken`, defina sua audiência como `https://api.fabric.microsoft.com` (sem `/.default`); sem ela, a resolução da conexão OBO pode falhar. Mantenha permissões e políticas de aprovação compatíveis com o ambiente. O endpoint MCP só fica disponível após a publicação; consulte a [documentação do Data Agent como servidor MCP](https://learn.microsoft.com/en-us/fabric/data-science/data-agent-mcp-server).
+
+Se o Foundry retornar `400` com `tool_user_error` e a mensagem `A user error occurred while executing a tool call.`, confira também se a capacidade Fabric do workspace está ativa. O endpoint MCP do Data Agent pode responder HTTP `200` com um erro JSON-RPC `CapacityNotActive`; esse HTTP não significa que a ferramenta funcionou. Se a capacidade estiver pausada, obtenha autorização para retomá-la no Azure, pois a retomada reinicia a cobrança, e depois valide uma nova pergunta que consulte a ferramenta. `GET /api/health` não detecta capacidade pausada.
 
 O proxy anexa a cada pergunta o cenário (`factory`, `farm`, `energy`, `mining` ou `pharma`), a planta, o resumo de estados, os alertas, o ativo selecionado e as leituras disponíveis dos ativos; leituras indisponíveis aparecem como `null` na lista. Ajuste as instruções e as fontes de conhecimento do agente para os domínios desejados. Para Pharma, explicite que os dados são fictícios, não orientam fabricação e não autorizam liberação de medicamentos. Nenhuma ferramenta de controle de equipamentos é adicionada ao Foundry.
 

@@ -530,6 +530,29 @@ kbd {
   color: #253e39; font: 500 10px "Segoe UI", system-ui, sans-serif;
   box-shadow: 0 2px 6px #193d4833; white-space: nowrap; pointer-events: none;
 }
+.pharma-step-label {
+  display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%;
+  background: #174e56; color: #fff; border: 2px solid #fff; font-size: 12px; font-weight: 700;
+}
+.pharma-area-label { font-size: 11px; background: #f5faf2; }
+.pharma-chain {
+  position: absolute; bottom: 12px; left: 12px; right: 12px; z-index: 3;
+  display: flex; align-items: center; gap: 6px; overflow-x: auto; padding: 10px;
+  border: 1px solid #c6dedb; border-radius: 8px; background: #f0f8f6f2; color: #174e56;
+}
+.pharma-chain button {
+  flex: none; padding: 7px; border: 1px solid #b4cfca; border-radius: 5px;
+  background: #fff; color: #174e56; font: 600 11px "Segoe UI", sans-serif; cursor: pointer;
+}
+.pharma-chain button:hover, .pharma-chain button:focus-visible { background: #d3eee7; outline: 2px solid #298f80; }
+.pharma-chain button::after { content: " →"; }
+.pharma-chain span { flex: none; font-size: 11px; font-weight: 700; }
+#app[data-scenario="pharma"] #stage-hint { bottom: 82px; }
+#app[data-scenario="pharma"] #stage-hint > div:last-child { display: none; }
+#app[data-scenario="pharma"] #legend { bottom: 82px; }
+#app[data-scenario="pharma"] #info-panel { bottom: 90px; max-height: calc(100% - 150px); overflow-y: auto; }
+#telemetry-choice select { width: 100%; }
+#telemetry-detail { overflow-wrap: anywhere; }
 .scenario-asset-dot {
   display: inline-block; width: 7px; height: 7px; margin-right: 6px;
   border-radius: 50%; vertical-align: middle;

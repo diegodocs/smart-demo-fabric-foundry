@@ -1,8 +1,10 @@
-import { createPharmaAssets, pharmaId, pharmaKb, pharmaParamSchema, PHARMA_COMMANDS } from './catalog.js';
+import { createPharmaAssets, pharmaId, pharmaKb, pharmaParamSchema, PHARMA_ASSET_DEFINITIONS, PHARMA_COMMANDS } from './catalog.js';
 import { createPharmaSimulation } from './simulation.js';
 
 const fmt = (value) => Number(value).toLocaleString('pt-BR', { maximumFractionDigits: 0 });
 const safety = 'Demonstração: lotes bloqueados não são liberados por comandos, calibração ou ajuste de limites. Em operação real, siga os procedimentos aprovados e a equipe de qualidade.';
+const pharmacyIds = PHARMA_ASSET_DEFINITIONS.filter((stage) => stage.type === 'pharma-pharmacy')
+  .map((stage) => pharmaId(stage.code, stage.number));
 
 export const pharmaProfile = {
   id: 'pharma', forceMock: false,
@@ -28,7 +30,7 @@ export const pharmaProfile = {
       const asset = state.byId[id];
       return asset && !asset.commLost && Number.isFinite(asset[key]) ? fmt(asset[key]) : '—';
     };
-    const pharmacies = [1, 2, 3].map((number) => state.byId[pharmaId('FAR', number)]);
+    const pharmacies = pharmacyIds.map((id) => state.byId[id]);
     const delivered = pharmacies.every((asset) => asset && !asset.commLost && Number.isFinite(asset.deliveredUnits))
       ? fmt(pharmacies.reduce((total, asset) => total + asset.deliveredUnits, 0)) : '—';
     return [
@@ -42,16 +44,17 @@ export const pharmaProfile = {
   },
   chrome: {
     wordmark: 'Smart <b>Pharma</b>',
-    title: 'Central de Monitoramento IoT — Smart Pharma',
+    title: 'Central de Monitoramento — Smart Pharma',
     subtitle: 'Cadeia farmacêutica · matéria-prima · produção · qualidade · entrega',
     hud: 'Smart Pharma <small>lotes · qualidade · cadeia fria</small>',
     assetsTitle: 'Ativos da cadeia farmacêutica',
     howtoTitle: 'Como explorar a cadeia',
     howto: [
-      '<b>Selecione uma etapa</b> na cena 3D ou na lista para consultar o lote, estoque e temperatura.',
-      '<b>Acompanhe o fluxo</b>: fábrica → caminhões → dois centros de distribuição → caminhões → três farmácias.',
+      '<b>Siga as etapas 1 a 7</b> na faixa do mapa. Clique em uma etapa, no edifício ou na lista para consultar lote, estoque e temperatura.',
+      '<b>Acompanhe o fluxo</b>: fábrica → caminhões → centro de distribuição → caminhões → duas farmácias.',
       '<b>Explore bloqueios</b>: cada quinto lote falha em um teste fictício; excursões fora de 2 a 8 °C bloqueiam os lotes na etapa refrigerada.',
       '<b>Pause ou retome</b> uma etapa para observar filas e estoques limitados.',
+      '<b>Escolha a fonte</b>: Simulação local funciona sem Fabric; Fabric RTI exige conexão real e simulador Node publicando. A troca reinicia a demonstração local.',
     ],
     procTitle: 'Ao investigar um alerta',
     proc: ['Confira lote, temperatura e comunicação.', 'Observe os bloqueios acumulados e as etapas adjacentes.',
@@ -67,7 +70,7 @@ export const pharmaProfile = {
     askPlaceholder: 'Pergunte sobre lotes, qualidade ou cadeia fria…',
   },
   assistant: {
-    intro: `Olá! Acompanho os 15 ativos da Smart Pharma, da matéria-prima às três farmácias. ${safety}`,
+    intro: `Olá! Acompanho os ${PHARMA_ASSET_DEFINITIONS.length} ativos da Smart Pharma, da matéria-prima às duas farmácias. ${safety}`,
     empty: `Selecione uma etapa ou cite PHA-QUA-001. Use “Resumo” para acompanhar a cadeia. ${safety}`,
     commands: `PAUSE/RESUME pausam e retomam etapas; SPEED_UP/SLOW_DOWN ajustam ritmos; EMERGENCY_STOP desliga somente o simulador. ${safety}`,
     status(asset) {
@@ -78,8 +81,8 @@ export const pharmaProfile = {
       const values = context.machines.map((asset) => asset.telemetry);
       if (values.some((reading) => !reading || !Number.isFinite(reading.inventoryUnits)
         || !Number.isFinite(reading.quarantinedUnits))) return `Cadeia farmacêutica com leituras incompletas. ${safety}`;
-      const deliveries = [1, 2, 3].map((number) =>
-        context.machines.find((asset) => asset.id === pharmaId('FAR', number))?.telemetry?.deliveredUnits);
+      const deliveries = pharmacyIds.map((id) =>
+        context.machines.find((asset) => asset.id === id)?.telemetry?.deliveredUnits);
       const delivered = deliveries.every(Number.isFinite) ? deliveries.reduce((sum, value) => sum + value, 0) : null;
       return `Cadeia farmacêutica: ${fmt(values.reduce((sum, reading) => sum + reading.inventoryUnits, 0))} unidades em processo; ${
         fmt(values.reduce((sum, reading) => sum + reading.quarantinedUnits, 0))} bloqueadas; ${

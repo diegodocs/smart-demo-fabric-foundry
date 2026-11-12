@@ -3,8 +3,11 @@ import { readFile } from 'node:fs/promises';
 import { mock, test } from 'node:test';
 import { createMachines } from '../app/src/usecases/factory/catalog.js';
 import { step, telemetrySnapshot } from '../app/src/domain/simulation.js';
+import { evaluate } from '../app/src/domain/rules.js';
 import { createFabricSource } from '../app/src/integration/telemetry/fabric.js';
+import { readTelemetryMode, saveTelemetryMode } from '../app/src/integration/telemetry/index.js';
 import { DEVICE_CATALOGS } from '../server/catalogs.js';
+import { applyControlSnapshot, createDeviceControl } from '../server/deviceControl.js';
 
 const sent = [];
 const credentialOptions = [];
@@ -25,6 +28,36 @@ mock.module('@azure/identity', {
   } },
 });
 const { publish, latestTelemetry, closeFabric, fabricConfig, getCredential, kql } = await import('../server/fabric.js');
+
+test('telemetry choice persists per scenario without changing the configured default', (t) => {
+  const original = globalThis.localStorage;
+  const values = new Map();
+  globalThis.localStorage = { getItem: (key) => values.get(key), setItem: (key, value) => values.set(key, value) };
+  t.after(() => {
+    if (original === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = original;
+  });
+  assert.equal(readTelemetryMode('pharma', 'fabric'), 'fabric');
+  saveTelemetryMode('pharma', 'mock');
+  assert.equal(readTelemetryMode('pharma', 'fabric'), 'mock');
+  assert.equal(readTelemetryMode('factory', 'fabric'), 'fabric');
+  saveTelemetryMode('pharma', 'fabric');
+  assert.equal(readTelemetryMode('pharma', 'mock'), 'fabric');
+  assert.throws(() => saveTelemetryMode('pharma', 'invalid'), /inválida/);
+});
+
+test('Eventhouse network errors identify the scenario configuration and preserve the cause', async (t) => {
+  const failure = new TypeError('fetch failed', { cause: Object.assign(new Error('DNS lookup failed'), { code: 'ENOTFOUND' }) });
+  t.mock.method(globalThis, 'fetch', async () => { throw failure; });
+  await assert.rejects(kql('print 1', {
+    scenario: 'pharma', scenarioSpecific: true, kustoUri: 'https://kusto.test',
+    database: 'test', telemetryTable: 'MachineTelemetry', scope: 'test',
+  }), (error) => {
+    assert.match(error.message, /ENOTFOUND.*FABRIC_PHARMA_KUSTO_URI/);
+    assert.equal(error.cause, failure);
+    return true;
+  });
+});
 
 test('Fabric source clears a polling error only after successful telemetry resumes', () => {
   const OriginalEventSource = globalThis.EventSource;
@@ -181,6 +214,44 @@ test('first Fabric batch contains the same operation state and readings as the i
   }
   assert.equal(batch.find(({ body }) => body.machineId === 'ROB-003').body.isRunning, false);
   await closeFabric();
+});
+
+test('Pharma publishes the UI status independently of the operation state', async (t) => {
+  t.after(closeFabric);
+  const devices = DEVICE_CATALOGS.pharma.createAssets();
+  const control = createDeviceControl(DEVICE_CATALOGS.pharma.createAssets);
+  const applied = new Map();
+  applyControlSnapshot(devices, control.snapshot(), applied);
+  const simulation = DEVICE_CATALOGS.pharma.createSimulation(devices);
+  const readings = simulation.snapshot();
+  const events = readings.map((reading) => ({ eventType: 'telemetry', scenario: 'pharma', ...reading }));
+  const offset = sent.length;
+  await publish(events, { connectionString: 'test' });
+  const batch = sent.slice(offset);
+  assert.equal(batch.length, devices.length);
+  for (const { body } of batch) {
+    const device = devices.find((asset) => asset.id === body.machineId);
+    assert.equal(body.status, evaluate(device).status, device.id);
+    assert.equal(body.status, 'online', device.id);
+  }
+  for (const id of ['PHA-REC-001', 'PHA-TRK-003']) {
+    const body = batch.find((event) => event.body.machineId === id).body;
+    assert.equal(body.status, 'online');
+    assert.equal(body.isRunning, false);
+  }
+
+  control.command('PHA-REC-001', 'PAUSE');
+  control.command('PHA-TRK-003', 'CYCLE_START');
+  applyControlSnapshot(devices, control.snapshot(), applied);
+  const next = simulation.step(1).map((reading) => ({ eventType: 'telemetry', scenario: 'pharma', ...reading }));
+  const nextOffset = sent.length;
+  await publish(next, { connectionString: 'test' });
+  const paused = sent.slice(nextOffset).find(({ body }) => body.machineId === 'PHA-REC-001').body;
+  const started = sent.slice(nextOffset).find(({ body }) => body.machineId === 'PHA-TRK-003').body;
+  assert.equal(paused.status, 'alert');
+  assert.equal(paused.isRunning, false);
+  assert.equal(started.status, 'online');
+  assert.equal(started.isRunning, true);
 });
 
 test('every scenario publishes its native readings and scenario ID unchanged to Eventstream', async () => {

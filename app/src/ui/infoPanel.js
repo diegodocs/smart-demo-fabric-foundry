@@ -122,7 +122,9 @@ export function mountInfoPanel({ onAsk, agentMode }) {
     const who = s.operator?.login || 'm.silveira';
     const via = s.connection.mode === 'fabric' ? 'Fabric RTI' : s.scenario === 'farm' ? 'simulador da fazenda' : 'simulador';
     setText($('#panel-hint'), off
-      ? `Sem leitura desde ${hms(new Date(m.lastSeen))} · envie RESUME para tentar reconectar antes de outros comandos (${who}).`
+      ? s.connection.mode === 'fabric'
+        ? `Sem leitura do Fabric. Verifique a conexão, o Eventhouse e o simulador; RESUME não corrige falhas de rede (${who}).`
+        : `Sem leitura desde ${hms(new Date(m.lastSeen))} · envie RESUME para tentar reconectar antes de outros comandos (${who}).`
       : `Leitura ${hms(new Date(m.lastSeen))} via ${via} · comandos executados como ${who} e registrados no log.`);
   });
 }

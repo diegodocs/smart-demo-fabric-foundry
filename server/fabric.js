@@ -90,11 +90,18 @@ export async function kql(csl, c = fabricConfig()) {
     throw Object.assign(new Error(`Eventhouse não configurado (${prefix}_KUSTO_URI / ${prefix}_KUSTO_DATABASE${table}).`), { status: 503 });
   }
   const { token } = await getFabricCredential(c.tenantId).getToken(c.scope);
-  const res = await fetch(`${c.kustoUri}/v1/rest/query`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json; charset=utf-8', Accept: 'application/json' },
-    body: JSON.stringify({ db: c.database, csl }),
-  });
+  let res;
+  try {
+    res = await fetch(`${c.kustoUri}/v1/rest/query`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json; charset=utf-8', Accept: 'application/json' },
+      body: JSON.stringify({ db: c.database, csl }),
+    });
+  } catch (error) {
+    const prefix = c.scenarioSpecific ? `FABRIC_${c.scenario.toUpperCase()}` : 'FABRIC';
+    const code = error.cause?.code;
+    throw new Error(`Falha de conexão com o Eventhouse (${code || error.message}). Verifique ${prefix}_KUSTO_URI, DNS e acesso à rede.`, { cause: error });
+  }
   if (!res.ok) throw new Error(`KQL ${res.status}: ${(await res.text()).slice(0, 300)}`);
   const data = await res.json();
   const t = data.Tables?.[0];

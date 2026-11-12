@@ -11,6 +11,6 @@ These files are bundled locally. No external asset service is contacted at runti
 | `asphalt*.jpg` | Poly Haven, [Asphalt 02](https://polyhaven.com/a/asphalt_02), 1K diffuse and OpenGL normal maps | CC0 |
 | `concrete*.jpg` | Poly Haven, [Concrete Floor 02](https://polyhaven.com/a/concrete_floor_02), 1K diffuse and OpenGL normal maps | CC0 |
 
-Original binaries/textures are unmodified. At runtime the models are centered, uniformly scaled, oriented and static meshes are merged by material to reduce draw calls. Vehicle wheels are separated for animation. The Cesium delivery truck is used as an illustrative electric fleet vehicle; its original model is not a technical specification of an electric powertrain.
+Original binaries/textures are unmodified. At runtime the models are centered, uniformly scaled, oriented and static meshes are merged by material to reduce draw calls. Vehicle wheels are separated for animation. Smart Pharma also reuses the car and delivery truck models, adding an illustrative refrigeration unit to the truck scene. The Cesium delivery truck is illustrative; its original model is not a technical specification of an electric powertrain or refrigerated vehicle.
 
 Khronos, 3D Commerce and Cesium marks contained in the original sample models belong to their respective owners; inclusion does not imply endorsement. Source notices are retained.

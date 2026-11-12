@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Smart Factory — Central de Monitoramento IoT</title>
+  <title>Smart Factory — Central de Monitoramento</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8F%AD%3C/text%3E%3C/svg%3E" />
   <link rel="stylesheet" href="./src/styles.css" />
 </head>
@@ -29,7 +29,7 @@
       </div>
       <div class="divider"></div>
       <div class="titles">
-        <h1 id="page-title">Central de Monitoramento IoT — Smart Factory</h1>
+        <h1 id="page-title">Central de Monitoramento — Smart Factory</h1>
         <p id="page-sub">Unidade Industrial Guarulhos · Linha A · Turno 2 (14:00 – 22:00)</p>
       </div>
     </div>
@@ -70,6 +70,18 @@
       <div class="kv"><span class="k">Login em</span><span class="v" id="session-login">14:02</span></div>
       <div class="kv"><span class="k">Expira em</span><span class="v" id="session-expire">04:00:00</span></div>
       <div class="kv"><span class="k">Permissão de comando</span><span class="v" id="session-perm" style="color:var(--green)">Liberada</span></div>
+    </div>
+
+    <div class="section" id="telemetry-choice" hidden>
+      <h3>Fonte da telemetria</h3>
+      <label class="scenario-switch">
+        Smart Pharma
+        <select id="telemetry-select" aria-label="Fonte da telemetria Smart Pharma">
+          <option value="fabric">Fabric RTI</option>
+          <option value="mock">Simulação local (sem Fabric)</option>
+        </select>
+      </label>
+      <p id="telemetry-detail" role="status"></p>
     </div>
 
     <div class="section">

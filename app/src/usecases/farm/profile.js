@@ -6,7 +6,7 @@ const fmt = (n, d = 0) => Number(n).toLocaleString('pt-BR', { minimumFractionDig
 export const farmProfile = {
   id: 'farm',
   forceMock: false,
-  documentTitle: 'Smart Farm — Central de Monitoramento IoT',
+  documentTitle: 'Smart Farm — Central de Monitoramento',
   plant: 'Fazenda Santa Luzia · Talhão Norte · Turno diurno',
   operator: { login: 'a.ribeiro', name: 'Ana Ribeiro', avatar: 'AR', meta: 'Matrícula 11820 · Gestora da propriedade' },
   initialKpis: { pieces: 0, commands: 3, paramChanges: 0, unplanned: 1 },
@@ -42,7 +42,7 @@ export const farmProfile = {
   },
   chrome: {
     wordmark: 'Smart <b>Farm</b>',
-    title: 'Central de Monitoramento IoT — Smart Farm',
+    title: 'Central de Monitoramento — Smart Farm',
     subtitle: 'Fazenda Santa Luzia · Talhão Norte · Turno diurno (06:00 – 14:00)',
     hud: '🌾 Smart Farm <small>campo · rebanho · instalações</small>',
     assetsTitle: 'Ativos da propriedade',
